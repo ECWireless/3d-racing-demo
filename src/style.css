@@ -101,6 +101,103 @@ p {
   white-space: nowrap;
 }
 
+.race-status {
+  margin-top: 14px;
+  color: #f8fafc;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.finish-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  min-width: min(360px, calc(100vw - 40px));
+  padding: 22px 26px 24px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 8px;
+  background: rgb(17 24 32 / 0.82);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 0.34);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(16px);
+}
+
+.finish-banner[hidden] {
+  display: none;
+}
+
+.finish-banner strong {
+  color: #ffffff;
+  font-size: clamp(2.6rem, 9vw, 5.4rem);
+  line-height: 0.95;
+}
+
+.finish-banner span {
+  margin-top: 10px;
+  color: #ffca3a;
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.race-announcement {
+  position: fixed;
+  top: 45%;
+  left: 50%;
+  display: grid;
+  min-width: min(320px, calc(100vw - 44px));
+  padding: 18px 24px 20px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 8px;
+  background: rgb(17 24 32 / 0.7);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 0.3);
+  text-align: center;
+  transform: translate(-50%, -50%) scale(1);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.race-announcement[hidden] {
+  display: none;
+}
+
+.race-announcement.is-animating {
+  animation: announcement-pop 0.82s ease-out both;
+}
+
+.race-announcement strong {
+  color: #ffffff;
+  font-size: clamp(3.4rem, 13vw, 8rem);
+  line-height: 0.86;
+  text-transform: uppercase;
+}
+
+.race-announcement span {
+  margin-top: 10px;
+  color: #ffca3a;
+  font-size: 1rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+@keyframes announcement-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.72);
+  }
+
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
 @media (max-width: 560px) {
   .hud {
     top: auto;
