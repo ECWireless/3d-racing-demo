@@ -9,7 +9,29 @@ if (!app) {
 
 app.innerHTML = `
   <canvas class="game-canvas" aria-label="3D racing demo viewport"></canvas>
-  <aside class="hud">
+  <main class="home-screen" data-home-screen>
+    <section class="home-panel">
+      <p class="eyebrow">3D Racing Demo</p>
+      <h1>Arcade Oval</h1>
+      <button class="play-button" type="button" data-play-button>Play</button>
+    </section>
+    <button class="leaderboard-teaser" type="button" data-leaderboard-teaser>
+      <span class="eyebrow">Local leaderboard</span>
+      <ol data-home-leaderboard-list></ol>
+    </button>
+  </main>
+  <main class="leaderboard-page" data-leaderboard-page hidden>
+    <section class="leaderboard-panel">
+      <p class="eyebrow">Local leaderboard</p>
+      <h1>Fastest laps</h1>
+      <ol data-full-leaderboard-list></ol>
+      <div class="page-actions">
+        <button type="button" data-leaderboard-back>Back</button>
+        <button type="button" data-leaderboard-play>Play</button>
+      </div>
+    </section>
+  </main>
+  <aside class="hud" data-game-ui hidden>
     <p class="eyebrow">Prototype 01</p>
     <h1>Arcade drive</h1>
     <dl class="telemetry">
@@ -30,13 +52,25 @@ app.innerHTML = `
         <dd data-race-time>0:00.00</dd>
       </div>
     </dl>
-    <p class="race-status" data-race-status>Accelerate to start the timer</p>
+    <p class="race-status" data-race-status>Get ready</p>
+  </aside>
+  <aside class="leaderboard" data-game-ui hidden>
+    <p class="eyebrow">Local leaderboard</p>
+    <ol data-leaderboard-list></ol>
   </aside>
   <div class="finish-banner" data-finish-banner hidden>
     <p class="eyebrow">Race complete</p>
     <strong>Finished!</strong>
     <span data-finish-time>0:00.00</span>
   </div>
+  <form class="username-modal" data-username-form hidden>
+    <p class="eyebrow">First finish</p>
+    <label for="username">Pick a racer name</label>
+    <div class="username-row">
+      <input id="username" data-username-input maxlength="16" autocomplete="nickname" required />
+      <button type="submit">Save</button>
+    </div>
+  </form>
   <div class="race-announcement" data-race-announcement hidden>
     <strong data-announcement-title>3</strong>
     <span data-announcement-subtitle>Get ready</span>
@@ -49,8 +83,24 @@ const driveStateDisplay = document.querySelector<HTMLElement>("[data-drive-state
 const lapDisplay = document.querySelector<HTMLSpanElement>("[data-lap]");
 const raceTimeDisplay = document.querySelector<HTMLElement>("[data-race-time]");
 const raceStatusDisplay = document.querySelector<HTMLElement>("[data-race-status]");
+const leaderboardList = document.querySelector<HTMLOListElement>("[data-leaderboard-list]");
+const homeScreen = document.querySelector<HTMLElement>("[data-home-screen]");
+const leaderboardPage = document.querySelector<HTMLElement>("[data-leaderboard-page]");
+const homeLeaderboardList =
+  document.querySelector<HTMLOListElement>("[data-home-leaderboard-list]");
+const fullLeaderboardList =
+  document.querySelector<HTMLOListElement>("[data-full-leaderboard-list]");
+const playButton = document.querySelector<HTMLButtonElement>("[data-play-button]");
+const leaderboardTeaser = document.querySelector<HTMLButtonElement>("[data-leaderboard-teaser]");
+const leaderboardBackButton =
+  document.querySelector<HTMLButtonElement>("[data-leaderboard-back]");
+const leaderboardPlayButton =
+  document.querySelector<HTMLButtonElement>("[data-leaderboard-play]");
+const gameUiElements = document.querySelectorAll<HTMLElement>("[data-game-ui]");
 const finishBanner = document.querySelector<HTMLElement>("[data-finish-banner]");
 const finishTimeDisplay = document.querySelector<HTMLElement>("[data-finish-time]");
+const usernameForm = document.querySelector<HTMLFormElement>("[data-username-form]");
+const usernameInput = document.querySelector<HTMLInputElement>("[data-username-input]");
 const raceAnnouncement = document.querySelector<HTMLElement>("[data-race-announcement]");
 const announcementTitle = document.querySelector<HTMLElement>("[data-announcement-title]");
 const announcementSubtitle = document.querySelector<HTMLElement>("[data-announcement-subtitle]");
@@ -274,6 +324,7 @@ const raceState = {
   elapsedTime: 0,
   isRunning: false,
   isFinished: false,
+  isResultSaved: false,
   isCountdownActive: false,
   countdownRemaining: 0,
   countdownLabel: "",
@@ -290,22 +341,212 @@ const acceleration = 18;
 const brakePower = 28;
 const drag = 2.4;
 const baseForwardSpeed = 26;
-const maxForwardSpeed = 34;
+const maxForwardSpeed = 42;
 const maxReverseSpeed = -9;
 const steeringPower = 2.2;
 const totalLaps = 3;
 const barrierInset = 0.65;
-const grassDrag = 11;
-const grassMaxSpeed = 16;
-const handbrakePower = 24;
+const grassDrag = 8.5;
+const grassMaxSpeed = 19;
+const handbrakePower = 18;
+const handbrakeSteeringBoost = 1.9;
+const handbrakePivotAssist = 0.32;
 const finishCoastDrag = 5.5;
 const countdownDuration = 3;
-const throttleRampBuildRate = 0.2;
+const throttleRampBuildRate = 0.1;
 const throttleRampDecayRate = 0.5;
 const overdriveAcceleration = 5;
+const playerIdKey = "racingDemo.playerId";
+const playerNameKey = "racingDemo.playerName";
+const leaderboardKey = "racingDemo.leaderboard";
+
+type LeaderboardEntry = {
+  id: string;
+  playerId: string;
+  username: string;
+  time: number;
+  completedAt: string;
+};
+
+const playerState = {
+  id: getOrCreatePlayerId(),
+  username: readStorage(playerNameKey),
+  pendingTime: null as number | null,
+};
+let currentView: "home" | "game" | "leaderboard" = "home";
 
 function isPressed(...codes: string[]) {
   return codes.some((code) => keys.has(code));
+}
+
+function readStorage(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Local-only demo identity is best effort.
+  }
+}
+
+function getOrCreatePlayerId() {
+  const existingId = readStorage(playerIdKey);
+
+  if (existingId) {
+    return existingId;
+  }
+
+  const id = crypto.randomUUID();
+  writeStorage(playerIdKey, id);
+  return id;
+}
+
+function getLeaderboard() {
+  const rawLeaderboard = readStorage(leaderboardKey);
+
+  if (!rawLeaderboard) {
+    return [] as LeaderboardEntry[];
+  }
+
+  try {
+    const parsed = JSON.parse(rawLeaderboard);
+    return Array.isArray(parsed) ? (parsed as LeaderboardEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setLeaderboard(entries: LeaderboardEntry[]) {
+  writeStorage(leaderboardKey, JSON.stringify(entries.slice(0, 10)));
+}
+
+function saveRaceResult(time: number) {
+  const username = playerState.username?.trim();
+
+  if (!username) {
+    playerState.pendingTime = time;
+    showUsernamePrompt();
+    return;
+  }
+
+  const entries = getLeaderboard();
+  entries.push({
+    id: crypto.randomUUID(),
+    playerId: playerState.id,
+    username,
+    time,
+    completedAt: new Date().toISOString(),
+  });
+  entries.sort((first, second) => first.time - second.time);
+  setLeaderboard(entries);
+  renderLeaderboard();
+}
+
+function renderLeaderboard() {
+  const entries = getLeaderboard().slice(0, 5);
+  const compactHtml =
+    entries.length > 0
+      ? entries
+          .map(
+            (entry) =>
+              `<li><span>${escapeHtml(entry.username)}</span><strong>${formatRaceTime(
+                entry.time,
+              )}</strong></li>`,
+          )
+          .join("")
+      : `<li class="empty">Finish a race to set the first time.</li>`;
+
+  if (leaderboardList) {
+    leaderboardList.innerHTML = compactHtml;
+  }
+
+  if (homeLeaderboardList) {
+    homeLeaderboardList.innerHTML = compactHtml;
+  }
+
+  if (fullLeaderboardList) {
+    const fullEntries = getLeaderboard().slice(0, 10);
+    fullLeaderboardList.innerHTML =
+      fullEntries.length > 0
+        ? fullEntries
+            .map(
+              (entry) =>
+                `<li><span>${escapeHtml(entry.username)}</span><strong>${formatRaceTime(
+                  entry.time,
+                )}</strong></li>`,
+            )
+            .join("")
+        : `<li class="empty">Finish a race to set the first time.</li>`;
+  }
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
+}
+
+function showUsernamePrompt() {
+  if (!usernameForm || !usernameInput) {
+    return;
+  }
+
+  usernameForm.hidden = false;
+  usernameInput.value = playerState.username ?? "";
+  keys.clear();
+  usernameInput.focus();
+}
+
+function setView(view: typeof currentView) {
+  currentView = view;
+
+  if (homeScreen) {
+    homeScreen.hidden = view !== "home";
+  }
+
+  if (leaderboardPage) {
+    leaderboardPage.hidden = view !== "leaderboard";
+  }
+
+  for (const element of gameUiElements) {
+    element.hidden = view !== "game";
+  }
+
+  if (view !== "game") {
+    keys.clear();
+  }
+}
+
+function startGame() {
+  resetCar();
+  setView("game");
+  startCountdown();
+}
+
+function isTypingIntoForm(event: KeyboardEvent) {
+  const target = event.target;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
 }
 
 const announcementState = {
@@ -394,6 +635,7 @@ function resetCar() {
   raceState.elapsedTime = 0;
   raceState.isRunning = false;
   raceState.isFinished = false;
+  raceState.isResultSaved = false;
   raceState.isCountdownActive = false;
   raceState.countdownRemaining = 0;
   raceState.countdownLabel = "";
@@ -409,6 +651,12 @@ function resetCar() {
     raceAnnouncement.hidden = true;
     raceAnnouncement.classList.remove("is-animating");
   }
+
+  if (usernameForm) {
+    usernameForm.hidden = true;
+  }
+
+  playerState.pendingTime = null;
 }
 
 function updateCar(deltaTime: number) {
@@ -488,9 +736,15 @@ function updateCar(deltaTime: number) {
     );
     carState.speed = THREE.MathUtils.clamp(carState.speed, maxReverseSpeed, currentForwardCap);
 
-    const speedFactor = Math.min(Math.abs(carState.speed) / maxForwardSpeed, 1);
+    const baseSpeedFactor = Math.min(Math.abs(carState.speed) / maxForwardSpeed, 1);
+    const speedFactor =
+      handbrake && Math.abs(carState.speed) > 2
+        ? Math.max(baseSpeedFactor, handbrakePivotAssist)
+        : baseSpeedFactor;
     const reverseSteering = carState.speed < 0 ? -1 : 1;
-    carState.heading += steerInput * steeringPower * speedFactor * reverseSteering * deltaTime;
+    const steeringMultiplier = handbrake ? handbrakeSteeringBoost : 1;
+    carState.heading +=
+      steerInput * steeringPower * steeringMultiplier * speedFactor * reverseSteering * deltaTime;
   } else {
     carState.speed = 0;
   }
@@ -544,6 +798,8 @@ function updateRace(deltaTime: number) {
       raceState.isFinished = true;
       raceState.isRunning = false;
       raceState.elapsedTime = Math.max(raceState.elapsedTime, 0);
+      raceState.isResultSaved = true;
+      saveRaceResult(raceState.elapsedTime);
     } else {
       raceState.currentLap += 1;
       raceState.isLapArmed = false;
@@ -577,7 +833,9 @@ function updateHud() {
   }
 
   if (driveStateDisplay) {
-    if (carState.speed > 0.5) {
+    if (isPressed("ShiftLeft", "ShiftRight") && Math.abs(carState.speed) > 0.5) {
+      driveStateDisplay.textContent = "Handbrake";
+    } else if (carState.speed > 0.5) {
       driveStateDisplay.textContent = "Forward";
     } else if (carState.speed < -0.5) {
       driveStateDisplay.textContent = "Reverse";
@@ -602,7 +860,7 @@ function updateHud() {
     } else if (raceState.isRunning) {
       raceStatusDisplay.textContent = `Lap ${raceState.currentLap} of ${totalLaps}`;
     } else {
-      raceStatusDisplay.textContent = "Accelerate to start the timer";
+      raceStatusDisplay.textContent = "Get ready";
     }
   }
 
@@ -636,8 +894,11 @@ function resizeRenderer() {
 function animate() {
   const deltaTime = Math.min(clock.getDelta(), 0.05);
 
-  updateCar(deltaTime);
-  updateRace(deltaTime);
+  if (currentView === "game") {
+    updateCar(deltaTime);
+    updateRace(deltaTime);
+  }
+
   updateCamera(deltaTime);
   updateHud();
   updateAnnouncement(deltaTime);
@@ -647,6 +908,14 @@ function animate() {
 
 window.addEventListener("resize", resizeRenderer);
 window.addEventListener("keydown", (event) => {
+  if (currentView !== "game") {
+    return;
+  }
+
+  if (isTypingIntoForm(event)) {
+    return;
+  }
+
   keys.add(event.code);
 
   if (event.code === "KeyR") {
@@ -654,6 +923,44 @@ window.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("keyup", (event) => {
+  if (currentView !== "game") {
+    return;
+  }
+
+  if (isTypingIntoForm(event)) {
+    return;
+  }
+
   keys.delete(event.code);
 });
+usernameForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const username = usernameInput?.value.trim().slice(0, 16);
+
+  if (!username) {
+    return;
+  }
+
+  playerState.username = username;
+  writeStorage(playerNameKey, username);
+  usernameForm.hidden = true;
+
+  if (playerState.pendingTime !== null) {
+    const pendingTime = playerState.pendingTime;
+    playerState.pendingTime = null;
+    saveRaceResult(pendingTime);
+  }
+});
+playButton?.addEventListener("click", startGame);
+leaderboardPlayButton?.addEventListener("click", startGame);
+leaderboardTeaser?.addEventListener("click", () => {
+  renderLeaderboard();
+  setView("leaderboard");
+});
+leaderboardBackButton?.addEventListener("click", () => {
+  setView("home");
+});
+renderLeaderboard();
+setView("home");
 animate();
