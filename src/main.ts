@@ -58,6 +58,19 @@ app.innerHTML = `
     <p class="eyebrow">Local leaderboard</p>
     <ol data-leaderboard-list></ol>
   </aside>
+  <div class="mobile-controls" data-game-ui hidden>
+    <div class="touch-stick" data-touch-stick>
+      <div class="touch-stick-knob" data-touch-stick-knob></div>
+    </div>
+    <div class="touch-pedals">
+      <button class="touch-pedal touch-pedal-accelerate" type="button" data-touch-accelerate>
+        Accel
+      </button>
+      <button class="touch-pedal touch-pedal-brake" type="button" data-touch-brake>
+        Brake
+      </button>
+    </div>
+  </div>
   <div class="finish-banner" data-finish-banner hidden>
     <p class="eyebrow">Race complete</p>
     <strong>Finished!</strong>
@@ -97,6 +110,10 @@ const leaderboardBackButton =
 const leaderboardPlayButton =
   document.querySelector<HTMLButtonElement>("[data-leaderboard-play]");
 const gameUiElements = document.querySelectorAll<HTMLElement>("[data-game-ui]");
+const touchStick = document.querySelector<HTMLElement>("[data-touch-stick]");
+const touchStickKnob = document.querySelector<HTMLElement>("[data-touch-stick-knob]");
+const touchAccelerate = document.querySelector<HTMLButtonElement>("[data-touch-accelerate]");
+const touchBrake = document.querySelector<HTMLButtonElement>("[data-touch-brake]");
 const finishBanner = document.querySelector<HTMLElement>("[data-finish-banner]");
 const finishTimeDisplay = document.querySelector<HTMLElement>("[data-finish-time]");
 const usernameForm = document.querySelector<HTMLFormElement>("[data-username-form]");
@@ -314,6 +331,12 @@ for (const [x, y, z] of wheelPositions) {
 
 const clock = new THREE.Clock();
 const keys = new Set<string>();
+const touchInput = {
+  throttle: false,
+  brake: false,
+  steering: 0,
+  stickPointerId: null as number | null,
+};
 const carState = {
   speed: 0,
   heading: Math.PI / 2,
@@ -377,6 +400,19 @@ let currentView: "home" | "game" | "leaderboard" = "home";
 
 function isPressed(...codes: string[]) {
   return codes.some((code) => keys.has(code));
+}
+
+function getThrottleInput() {
+  return touchInput.throttle || isPressed("KeyW", "ArrowUp");
+}
+
+function getBrakeInput() {
+  return touchInput.brake || isPressed("KeyS", "ArrowDown");
+}
+
+function getSteeringInput() {
+  const keyboardSteering = Number(isPressed("KeyA", "ArrowLeft")) - Number(isPressed("KeyD", "ArrowRight"));
+  return THREE.MathUtils.clamp(keyboardSteering + touchInput.steering, -1, 1);
 }
 
 function readStorage(key: string) {
@@ -531,6 +567,9 @@ function setView(view: typeof currentView) {
 
   if (view !== "game") {
     keys.clear();
+    touchInput.throttle = false;
+    touchInput.brake = false;
+    resetTouchStick();
   }
 }
 
@@ -538,6 +577,50 @@ function startGame() {
   resetCar();
   setView("game");
   startCountdown();
+}
+
+function resetTouchStick() {
+  touchInput.steering = 0;
+  touchInput.stickPointerId = null;
+
+  if (touchStickKnob) {
+    touchStickKnob.style.transform = "translate(-50%, -50%)";
+  }
+}
+
+function updateTouchStick(pointerX: number) {
+  if (!touchStick || !touchStickKnob) {
+    return;
+  }
+
+  const bounds = touchStick.getBoundingClientRect();
+  const centerX = bounds.left + bounds.width / 2;
+  const maxOffset = bounds.width * 0.34;
+  const offsetX = THREE.MathUtils.clamp(pointerX - centerX, -maxOffset, maxOffset);
+
+  touchInput.steering = THREE.MathUtils.clamp(offsetX / maxOffset, -1, 1);
+  touchStickKnob.style.transform = `translate(calc(-50% + ${offsetX}px), -50%)`;
+}
+
+function bindTouchButton(button: HTMLButtonElement | null, key: "throttle" | "brake") {
+  if (!button) {
+    return;
+  }
+
+  const setPressed = (pressed: boolean) => {
+    touchInput[key] = pressed;
+    button.classList.toggle("is-pressed", pressed);
+  };
+
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    setPressed(true);
+  });
+
+  button.addEventListener("pointerup", () => setPressed(false));
+  button.addEventListener("pointercancel", () => setPressed(false));
+  button.addEventListener("lostpointercapture", () => setPressed(false));
 }
 
 function isTypingIntoForm(event: KeyboardEvent) {
@@ -660,12 +743,10 @@ function resetCar() {
 }
 
 function updateCar(deltaTime: number) {
-  const throttle = isPressed("KeyW", "ArrowUp");
-  const brake = isPressed("KeyS", "ArrowDown");
+  const throttle = getThrottleInput();
+  const brake = getBrakeInput();
   const handbrake = isPressed("ShiftLeft", "ShiftRight");
-  const steerLeft = isPressed("KeyA", "ArrowLeft");
-  const steerRight = isPressed("KeyD", "ArrowRight");
-  const steerInput = Number(steerLeft) - Number(steerRight);
+  const steerInput = getSteeringInput();
   const isOnRoad = isCarOnRoad();
 
   if (
@@ -961,6 +1042,27 @@ leaderboardTeaser?.addEventListener("click", () => {
 leaderboardBackButton?.addEventListener("click", () => {
   setView("home");
 });
+touchStick?.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  touchInput.stickPointerId = event.pointerId;
+  touchStick.setPointerCapture(event.pointerId);
+  updateTouchStick(event.clientX);
+});
+touchStick?.addEventListener("pointermove", (event) => {
+  if (event.pointerId === touchInput.stickPointerId) {
+    event.preventDefault();
+    updateTouchStick(event.clientX);
+  }
+});
+touchStick?.addEventListener("pointerup", (event) => {
+  if (event.pointerId === touchInput.stickPointerId) {
+    resetTouchStick();
+  }
+});
+touchStick?.addEventListener("pointercancel", resetTouchStick);
+touchStick?.addEventListener("lostpointercapture", resetTouchStick);
+bindTouchButton(touchAccelerate, "throttle");
+bindTouchButton(touchBrake, "brake");
 renderLeaderboard();
 setView("home");
 animate();

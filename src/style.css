@@ -186,6 +186,76 @@ body {
   background: #ffca3a;
 }
 
+.mobile-controls {
+  position: fixed;
+  inset: auto 0 0;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 0 18px 18px;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.touch-stick,
+.touch-pedals {
+  pointer-events: auto;
+}
+
+.touch-stick {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 999px;
+  background: rgb(17 24 32 / 0.34);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.24);
+  backdrop-filter: blur(12px);
+}
+
+.touch-stick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 62px;
+  height: 62px;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.18);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  transform: translate(-50%, -50%);
+}
+
+.touch-pedals {
+  display: grid;
+  gap: 12px;
+}
+
+.touch-pedal {
+  width: 94px;
+  height: 76px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 8px;
+  color: #111820;
+  background: rgb(255 202 58 / 0.88);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.24);
+  font: inherit;
+  font-weight: 950;
+  touch-action: none;
+  user-select: none;
+}
+
+.touch-pedal-brake {
+  color: #f8fafc;
+  background: rgb(230 57 70 / 0.82);
+}
+
+.touch-pedal.is-pressed,
+.touch-stick:active {
+  transform: scale(0.97);
+}
+
 .hud {
   position: fixed;
   top: 18px;
@@ -477,5 +547,16 @@ p {
 
   .leaderboard {
     display: none;
+  }
+}
+
+@media (pointer: coarse), (max-width: 820px) {
+  .mobile-controls:not([hidden]) {
+    display: flex;
+  }
+
+  .hud {
+    transform: scale(0.88);
+    transform-origin: top left;
   }
 }
