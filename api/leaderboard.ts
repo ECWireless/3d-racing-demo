@@ -1,5 +1,5 @@
-import type { Request, Response } from "./_shared";
-import { handleApiError, sendJson, sql } from "./_shared";
+import type { Request, Response } from "./_shared.js";
+import { getSql, handleApiError, sendJson } from "./_shared.js";
 
 export default async function handler(request: Request, response: Response) {
   if (request.method !== "GET") {
@@ -9,6 +9,7 @@ export default async function handler(request: Request, response: Response) {
   }
 
   try {
+    const sql = getSql();
     const rows = await sql`
       select player_id, username, total_laps, total_time_ms, created_at
       from race_results

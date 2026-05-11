@@ -1,6 +1,5 @@
-import type { Request, Response } from "./_shared";
-import { sendJson } from "./_shared";
+import type { Request, Response } from "./_shared.js";
 
 export default function handler(_request: Request, response: Response) {
-  sendJson(response, 200, { ok: true });
+  response.status(200).json({ ok: true });
 }

@@ -1,5 +1,5 @@
-import type { Request, Response } from "./_shared";
-import { handleApiError, resultSchema, sendJson, sql } from "./_shared";
+import type { Request, Response } from "./_shared.js";
+import { getSql, handleApiError, resultSchema, sendJson } from "./_shared.js";
 
 export default async function handler(request: Request, response: Response) {
   if (request.method !== "POST") {
@@ -9,6 +9,7 @@ export default async function handler(request: Request, response: Response) {
   }
 
   try {
+    const sql = getSql();
     const result = resultSchema.parse(request.body);
     const leaderboardRows = await sql`
       select total_time_ms

@@ -1,13 +1,18 @@
 import { neon } from "@neondatabase/serverless";
 import { z } from "zod";
 
-const databaseUrl = process.env.DATABASE_URL;
+let sqlClient: ReturnType<typeof neon> | null = null;
 
-if (!databaseUrl) {
-  throw new Error("Missing DATABASE_URL environment variable");
+export function getSql() {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("Missing DATABASE_URL environment variable");
+  }
+
+  sqlClient ??= neon(databaseUrl);
+  return sqlClient;
 }
-
-export const sql = neon(databaseUrl);
 
 export const playerSchema = z.object({
   playerId: z.string().uuid(),

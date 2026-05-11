@@ -1,5 +1,5 @@
-import type { Request, Response } from "./_shared";
-import { createRoomCode, handleApiError, playerSchema, sendJson, sql } from "./_shared";
+import type { Request, Response } from "./_shared.js";
+import { createRoomCode, getSql, handleApiError, playerSchema, sendJson } from "./_shared.js";
 
 export default async function handler(request: Request, response: Response) {
   if (request.method !== "POST") {
@@ -9,6 +9,7 @@ export default async function handler(request: Request, response: Response) {
   }
 
   try {
+    const sql = getSql();
     const player = playerSchema.parse(request.body);
     const code = createRoomCode();
 
