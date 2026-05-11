@@ -10,6 +10,7 @@
     "dev:all": "concurrently \"pnpm dev --host 0.0.0.0\" \"pnpm dev:api\"",
     "build": "tsc && vite build",
     "db:schema": "tsx server/schema.ts",
+    "db:wipe": "tsx server/wipe.ts",
     "preview": "vite preview"
   },
   "dependencies": {
