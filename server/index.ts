@@ -91,7 +91,25 @@ app.post("/api/results", async (request, response, next) => {
       )
     `;
 
-    response.status(201).json({ saved: true, result: rows[0] });
+    const rankRows = await sql`
+      select leaderboard_rank
+      from (
+        select id,
+          row_number() over (
+            partition by total_laps
+            order by total_time_ms asc, created_at asc
+          ) as leaderboard_rank
+        from race_results
+        where total_laps = ${result.totalLaps}
+      ) ranked_results
+      where id = ${rows[0].id}
+    `;
+
+    response.status(201).json({
+      saved: true,
+      placement: Number(rankRows[0]?.leaderboard_rank ?? 0),
+      result: rows[0],
+    });
   } catch (error) {
     next(error);
   }

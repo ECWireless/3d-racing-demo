@@ -75,6 +75,8 @@ app.innerHTML = `
     <p class="eyebrow">Race complete</p>
     <strong>Finished!</strong>
     <span data-finish-time>0:00.00</span>
+    <span class="finish-result" data-finish-result>Checking leaderboard...</span>
+    <button type="button" data-retry-button>Retry</button>
   </div>
   <form class="username-modal" data-username-form hidden>
     <p class="eyebrow">First finish</p>
@@ -116,6 +118,8 @@ const touchAccelerate = document.querySelector<HTMLButtonElement>("[data-touch-a
 const touchBrake = document.querySelector<HTMLButtonElement>("[data-touch-brake]");
 const finishBanner = document.querySelector<HTMLElement>("[data-finish-banner]");
 const finishTimeDisplay = document.querySelector<HTMLElement>("[data-finish-time]");
+const finishResultDisplay = document.querySelector<HTMLElement>("[data-finish-result]");
+const retryButton = document.querySelector<HTMLButtonElement>("[data-retry-button]");
 const usernameForm = document.querySelector<HTMLFormElement>("[data-username-form]");
 const usernameInput = document.querySelector<HTMLInputElement>("[data-username-input]");
 const raceAnnouncement = document.querySelector<HTMLElement>("[data-race-announcement]");
@@ -348,6 +352,7 @@ const raceState = {
   isRunning: false,
   isFinished: false,
   isResultSaved: false,
+  resultMessage: "Checking leaderboard...",
   isCountdownActive: false,
   countdownRemaining: 0,
   countdownLabel: "",
@@ -510,7 +515,7 @@ async function loadRemoteLeaderboard() {
 
 async function saveRaceResult(time: number) {
   if (!qualifiesForLeaderboard(time)) {
-    showAnnouncement("Finished!", "No leaderboard time", 1.4);
+    raceState.resultMessage = "No leaderboard time. Try again?";
     return;
   }
 
@@ -518,6 +523,7 @@ async function saveRaceResult(time: number) {
 
   if (!username) {
     playerState.pendingTime = time;
+    raceState.resultMessage = "Enter a racer name to submit your time.";
     showUsernamePrompt();
     return;
   }
@@ -540,17 +546,22 @@ async function saveRaceResult(time: number) {
       throw new Error(`Results API returned ${response.status}`);
     }
 
-    const body = (await response.json()) as { saved?: boolean };
+    const body = (await response.json()) as { saved?: boolean; placement?: number };
 
     if (body.saved === false) {
-      showAnnouncement("Finished!", "No leaderboard time", 1.4);
+      raceState.resultMessage = "No leaderboard time. Try again?";
       await loadRemoteLeaderboard();
       return;
     }
 
+    raceState.resultMessage =
+      body.placement && body.placement > 0
+        ? `Leaderboard place #${body.placement}. Retry?`
+        : "Leaderboard time saved. Retry?";
     await loadRemoteLeaderboard();
   } catch (error) {
     leaderboardError = error instanceof Error ? error.message : "Could not save leaderboard time";
+    raceState.resultMessage = "Could not save leaderboard time. Retry?";
     renderLeaderboard();
   }
 }
@@ -562,12 +573,7 @@ function renderLeaderboard() {
       ? `<li class="empty">${escapeHtml(leaderboardError)}</li>`
       : entries.length > 0
       ? entries
-          .map(
-            (entry) =>
-              `<li><span>${escapeHtml(entry.username)}</span><strong>${formatRaceTime(
-                entry.time,
-              )}</strong></li>`,
-          )
+          .map((entry, index) => renderLeaderboardRow(entry, index))
           .join("")
       : `<li class="empty">Finish a race to set the first time.</li>`;
 
@@ -586,15 +592,22 @@ function renderLeaderboard() {
         ? `<li class="empty">${escapeHtml(leaderboardError)}</li>`
         : fullEntries.length > 0
         ? fullEntries
-            .map(
-              (entry) =>
-                `<li><span>${escapeHtml(entry.username)}</span><strong>${formatRaceTime(
-                  entry.time,
-                )}</strong></li>`,
-            )
+            .map((entry, index) => renderLeaderboardRow(entry, index))
             .join("")
         : `<li class="empty">Finish a race to set the first time.</li>`;
   }
+}
+
+function renderLeaderboardRow(entry: LeaderboardEntry, index: number) {
+  const rank = index + 1;
+  const rankClass = rank <= 3 ? ` rank-${rank}` : "";
+  const medal = rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : `${rank}.`;
+
+  return `<li class="leaderboard-row${rankClass}">
+    <span class="rank-medal">${medal}</span>
+    <span>${escapeHtml(entry.username)}</span>
+    <strong>${formatRaceTime(entry.time)}</strong>
+  </li>`;
 }
 
 function escapeHtml(value: string) {
@@ -794,6 +807,7 @@ function resetCar() {
   raceState.isRunning = false;
   raceState.isFinished = false;
   raceState.isResultSaved = false;
+  raceState.resultMessage = "Checking leaderboard...";
   raceState.isCountdownActive = false;
   raceState.countdownRemaining = 0;
   raceState.countdownLabel = "";
@@ -955,7 +969,8 @@ function updateRace(deltaTime: number) {
       raceState.isRunning = false;
       raceState.elapsedTime = Math.max(raceState.elapsedTime, 0);
       raceState.isResultSaved = true;
-      saveRaceResult(raceState.elapsedTime);
+      raceState.resultMessage = "Checking leaderboard...";
+      void saveRaceResult(raceState.elapsedTime);
     } else {
       raceState.currentLap += 1;
       raceState.isLapArmed = false;
@@ -1010,7 +1025,7 @@ function updateHud() {
 
   if (raceStatusDisplay) {
     if (raceState.isFinished) {
-      raceStatusDisplay.textContent = "Finished! Press R to race again.";
+      raceStatusDisplay.textContent = raceState.resultMessage;
     } else if (raceState.isCountdownActive) {
       raceStatusDisplay.textContent = "Countdown started";
     } else if (raceState.isRunning) {
@@ -1026,6 +1041,10 @@ function updateHud() {
 
   if (finishTimeDisplay) {
     finishTimeDisplay.textContent = formatRaceTime(raceState.elapsedTime);
+  }
+
+  if (finishResultDisplay) {
+    finishResultDisplay.textContent = raceState.resultMessage;
   }
 }
 
@@ -1110,6 +1129,7 @@ usernameForm?.addEventListener("submit", (event) => {
 });
 playButton?.addEventListener("click", startGame);
 leaderboardPlayButton?.addEventListener("click", startGame);
+retryButton?.addEventListener("click", startGame);
 leaderboardTeaser?.addEventListener("click", () => {
   renderLeaderboard();
   setView("leaderboard");

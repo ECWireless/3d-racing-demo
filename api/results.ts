@@ -58,7 +58,25 @@ export default async function handler(request: Request, response: Response) {
       )
     `;
 
-    sendJson(response, 201, { saved: true, result: rows[0] });
+    const rankRows = await sql`
+      select leaderboard_rank
+      from (
+        select id,
+          row_number() over (
+            partition by total_laps
+            order by total_time_ms asc, created_at asc
+          ) as leaderboard_rank
+        from race_results
+        where total_laps = ${result.totalLaps}
+      ) ranked_results
+      where id = ${rows[0].id}
+    `;
+
+    sendJson(response, 201, {
+      saved: true,
+      placement: Number(rankRows[0]?.leaderboard_rank ?? 0),
+      result: rows[0],
+    });
   } catch (error) {
     handleApiError(error, response);
   }
