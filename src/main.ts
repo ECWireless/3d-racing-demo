@@ -403,7 +403,8 @@ const playerState = {
   username: readStorage(playerNameKey),
   pendingTime: null as number | null,
 };
-let leaderboardEntries = getLeaderboard();
+let leaderboardEntries: LeaderboardEntry[] = [];
+let leaderboardError: string | null = null;
 let currentView: "home" | "game" | "leaderboard" = "home";
 
 function isPressed(...codes: string[]) {
@@ -471,6 +472,10 @@ function setLeaderboard(entries: LeaderboardEntry[]) {
 }
 
 function qualifiesForLeaderboard(time: number, entries = leaderboardEntries) {
+  if (leaderboardError) {
+    return true;
+  }
+
   if (entries.length < 10) {
     return true;
   }
@@ -483,10 +488,11 @@ async function loadRemoteLeaderboard() {
     const response = await fetch("/api/leaderboard");
 
     if (!response.ok) {
-      throw new Error("Leaderboard API unavailable");
+      throw new Error(`Leaderboard API returned ${response.status}`);
     }
 
     const body = (await response.json()) as { entries?: ApiLeaderboardRow[] };
+    leaderboardError = null;
     leaderboardEntries = (body.entries ?? []).map((entry) => ({
       id: `${entry.player_id}-${entry.created_at}`,
       playerId: entry.player_id,
@@ -495,8 +501,9 @@ async function loadRemoteLeaderboard() {
       completedAt: entry.created_at,
     }));
     renderLeaderboard();
-  } catch {
-    leaderboardEntries = getLeaderboard();
+  } catch (error) {
+    leaderboardError = error instanceof Error ? error.message : "Leaderboard API unavailable";
+    leaderboardEntries = [];
     renderLeaderboard();
   }
 }
@@ -515,20 +522,6 @@ async function saveRaceResult(time: number) {
     return;
   }
 
-  const entries = getLeaderboard();
-  entries.push({
-    id: crypto.randomUUID(),
-    playerId: playerState.id,
-    username,
-    time,
-    completedAt: new Date().toISOString(),
-  });
-  entries.sort((first, second) => first.time - second.time);
-  entries.splice(10);
-  setLeaderboard(entries);
-  leaderboardEntries = entries;
-  renderLeaderboard();
-
   try {
     const response = await fetch("/api/results", {
       method: "POST",
@@ -543,24 +536,31 @@ async function saveRaceResult(time: number) {
       }),
     });
 
+    if (!response.ok) {
+      throw new Error(`Results API returned ${response.status}`);
+    }
+
     const body = (await response.json()) as { saved?: boolean };
 
     if (body.saved === false) {
-      leaderboardEntries = getLeaderboard();
-      renderLeaderboard();
+      showAnnouncement("Finished!", "No leaderboard time", 1.4);
+      await loadRemoteLeaderboard();
       return;
     }
 
     await loadRemoteLeaderboard();
-  } catch {
-    // Keep the local leaderboard as the offline fallback for the demo.
+  } catch (error) {
+    leaderboardError = error instanceof Error ? error.message : "Could not save leaderboard time";
+    renderLeaderboard();
   }
 }
 
 function renderLeaderboard() {
   const entries = leaderboardEntries.slice(0, 5);
   const compactHtml =
-    entries.length > 0
+    leaderboardError
+      ? `<li class="empty">${escapeHtml(leaderboardError)}</li>`
+      : entries.length > 0
       ? entries
           .map(
             (entry) =>
@@ -582,7 +582,9 @@ function renderLeaderboard() {
   if (fullLeaderboardList) {
     const fullEntries = leaderboardEntries.slice(0, 10);
     fullLeaderboardList.innerHTML =
-      fullEntries.length > 0
+      leaderboardError
+        ? `<li class="empty">${escapeHtml(leaderboardError)}</li>`
+        : fullEntries.length > 0
         ? fullEntries
             .map(
               (entry) =>
