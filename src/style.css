@@ -124,6 +124,70 @@ body {
   font-weight: 900;
 }
 
+.leaderboard-teaser .leaderboard-row::before,
+.leaderboard-panel .leaderboard-row::before,
+.leaderboard .leaderboard-row::before {
+  content: none;
+}
+
+.leaderboard-row {
+  position: relative;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.rank-medal {
+  flex: 0 0 auto;
+  display: inline-grid;
+  min-width: 34px;
+  min-height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  color: #111820;
+  background: #90a1b2;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.rank-1 {
+  min-height: 46px;
+  border-color: rgb(255 202 58 / 0.6);
+  background: linear-gradient(90deg, rgb(255 202 58 / 0.22), rgb(255 255 255 / 0.06));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 10px 30px rgb(255 202 58 / 0.1);
+}
+
+.rank-1 .rank-medal {
+  min-width: 42px;
+  min-height: 30px;
+  background: #ffca3a;
+}
+
+.rank-1 span:not(.rank-medal),
+.rank-1 strong {
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.rank-2 {
+  border-color: rgb(203 213 225 / 0.32);
+  background: rgb(203 213 225 / 0.1);
+}
+
+.rank-2 .rank-medal {
+  background: #cbd5e1;
+}
+
+.rank-3 {
+  border-color: rgb(224 149 91 / 0.32);
+  background: rgb(224 149 91 / 0.1);
+}
+
+.rank-3 .rank-medal {
+  background: #e0955b;
+}
+
 .leaderboard-teaser li:nth-child(n + 4) {
   opacity: 0.28;
 }
@@ -405,7 +469,7 @@ p {
   text-align: center;
   transform: translateX(-50%);
   backdrop-filter: blur(16px);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .finish-banner[hidden] {
@@ -423,6 +487,25 @@ p {
   color: #ffca3a;
   font-size: 1.05rem;
   font-weight: 900;
+}
+
+.finish-banner .finish-result {
+  color: #f8fafc;
+  font-size: 0.9rem;
+}
+
+.finish-banner button {
+  justify-self: center;
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 0 18px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  color: #111820;
+  background: #ffca3a;
+  font: inherit;
+  font-weight: 950;
+  cursor: pointer;
 }
 
 .username-modal {
