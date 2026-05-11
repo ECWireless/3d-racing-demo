@@ -44,6 +44,10 @@ body {
   background: linear-gradient(rgb(17 24 32 / 0.12), rgb(17 24 32 / 0.42));
 }
 
+.home-screen {
+  padding-bottom: 360px;
+}
+
 .home-screen[hidden],
 .leaderboard-page[hidden] {
   display: none;
@@ -53,6 +57,7 @@ body {
   display: grid;
   justify-items: center;
   text-align: center;
+  transform: translateY(-24px);
 }
 
 .home-panel h1,
@@ -81,7 +86,7 @@ body {
 
 .leaderboard-teaser {
   position: fixed;
-  bottom: 20px;
+  bottom: 28px;
   left: 50%;
   width: min(460px, calc(100vw - 40px));
   padding: 16px 18px;
@@ -494,18 +499,31 @@ p {
   font-size: 0.9rem;
 }
 
-.finish-banner button {
-  justify-self: center;
-  min-height: 36px;
+.finish-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
   margin-top: 10px;
+}
+
+.finish-banner button {
+  min-height: 36px;
   padding: 0 18px;
   border: 1px solid rgb(255 255 255 / 0.16);
   border-radius: 6px;
-  color: #111820;
-  background: #ffca3a;
   font: inherit;
   font-weight: 950;
   cursor: pointer;
+}
+
+.finish-banner button:first-child {
+  color: #111820;
+  background: #ffca3a;
+}
+
+.finish-banner button:last-child {
+  color: #f8fafc;
+  background: rgb(255 255 255 / 0.08);
 }
 
 .username-modal {
@@ -621,6 +639,32 @@ p {
 }
 
 @media (max-width: 560px) {
+  .home-screen {
+    align-content: start;
+    gap: 22px;
+    overflow-y: auto;
+    padding: 64px 18px 24px;
+  }
+
+  .home-panel h1 {
+    font-size: clamp(2.6rem, 18vw, 4.6rem);
+  }
+
+  .play-button {
+    min-width: 170px;
+    min-height: 56px;
+    margin-top: 20px;
+  }
+
+  .leaderboard-teaser {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    width: min(420px, 100%);
+    margin-top: 18px;
+    transform: none;
+  }
+
   .hud {
     top: auto;
     bottom: 12px;
