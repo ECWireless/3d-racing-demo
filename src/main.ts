@@ -598,7 +598,7 @@ function updateTouchStick(pointerX: number) {
   const maxOffset = bounds.width * 0.34;
   const offsetX = THREE.MathUtils.clamp(pointerX - centerX, -maxOffset, maxOffset);
 
-  touchInput.steering = THREE.MathUtils.clamp(offsetX / maxOffset, -1, 1);
+  touchInput.steering = THREE.MathUtils.clamp(-offsetX / maxOffset, -1, 1);
   touchStickKnob.style.transform = `translate(calc(-50% + ${offsetX}px), -50%)`;
 }
 
