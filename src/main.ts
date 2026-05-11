@@ -160,10 +160,10 @@ sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
 sunLight.shadow.camera.near = 1;
 sunLight.shadow.camera.far = 45;
-sunLight.shadow.camera.left = -45;
-sunLight.shadow.camera.right = 45;
-sunLight.shadow.camera.top = 45;
-sunLight.shadow.camera.bottom = -45;
+sunLight.shadow.camera.left = -75;
+sunLight.shadow.camera.right = 75;
+sunLight.shadow.camera.top = 75;
+sunLight.shadow.camera.bottom = -75;
 scene.add(sunLight);
 
 const trackGroup = new THREE.Group();
@@ -173,7 +173,7 @@ const groundMaterial = new THREE.MeshStandardMaterial({
   color: 0x2d6a4f,
   roughness: 0.9,
 });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 160), groundMaterial);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(320, 220), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 trackGroup.add(ground);
@@ -182,12 +182,12 @@ const roadMaterial = new THREE.MeshStandardMaterial({
   color: 0x24292f,
   roughness: 0.74,
 });
-const trackStraightHalfLength = 46;
-const roadInnerRadius = 16;
-const roadOuterRadius = 26;
+const trackStraightHalfLength = 69;
+const roadInnerRadius = 24;
+const roadOuterRadius = 39;
 const roadWidth = roadOuterRadius - roadInnerRadius;
 const roadCenterRadius = (roadInnerRadius + roadOuterRadius) / 2;
-const grassRunoff = 7;
+const grassRunoff = 10;
 const innerBarrierRadius = roadInnerRadius - grassRunoff;
 const outerBarrierRadius = roadOuterRadius + grassRunoff;
 
@@ -290,6 +290,40 @@ for (let column = 0; column < tileColumns; column += 1) {
   }
 }
 
+const rampLength = 10;
+const rampWidth = roadWidth * 0.72;
+const rampSurfaceClearance = 0.06;
+const rampCenter = new THREE.Vector3(0, rampSurfaceClearance, roadCenterRadius);
+const rampGroup = new THREE.Group();
+rampGroup.position.copy(rampCenter);
+trackGroup.add(rampGroup);
+const rampSurfaceThickness = 0.28;
+
+const rampMaterial = new THREE.MeshStandardMaterial({
+  color: 0x4b5563,
+  roughness: 0.62,
+});
+const rampMesh = new THREE.Mesh(new THREE.BoxGeometry(rampLength, rampSurfaceThickness, rampWidth), rampMaterial);
+rampMesh.position.x = rampLength / 2;
+rampMesh.position.y = -rampSurfaceThickness / 2;
+rampMesh.castShadow = true;
+rampMesh.receiveShadow = true;
+rampGroup.add(rampMesh);
+
+const boosterMaterial = new THREE.MeshStandardMaterial({
+  color: 0x00d4ff,
+  emissive: 0x006b80,
+  emissiveIntensity: 0.9,
+  roughness: 0.25,
+});
+const boosterMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(rampLength * 0.62, 0.04, rampWidth * 0.62),
+  boosterMaterial,
+);
+boosterMesh.position.set(rampLength * 0.56, 0.04, 0);
+boosterMesh.castShadow = true;
+rampGroup.add(boosterMesh);
+
 const carGroup = new THREE.Group();
 carGroup.position.set(0, 0.48, startLineZ);
 carGroup.rotation.y = Math.PI / 2;
@@ -349,6 +383,10 @@ const carState = {
   speed: 0,
   heading: Math.PI / 2,
   throttleRamp: 0,
+  verticalPosition: 0,
+  verticalVelocity: 0,
+  pitch: 0,
+  isAirborne: false,
 };
 const raceState = {
   currentLap: 1,
@@ -357,6 +395,7 @@ const raceState = {
   isFinished: false,
   isResultSaved: false,
   resultMessage: "Checking leaderboard...",
+  isRampLaunchArmed: true,
   isCountdownActive: false,
   countdownRemaining: 0,
   countdownLabel: "",
@@ -368,6 +407,10 @@ const forward = new THREE.Vector3();
 const cameraTarget = new THREE.Vector3();
 const cameraLookAt = new THREE.Vector3();
 const desiredCameraPosition = new THREE.Vector3();
+const yawQuaternion = new THREE.Quaternion();
+const pitchQuaternion = new THREE.Quaternion();
+const worldUp = new THREE.Vector3(0, 1, 0);
+const localRight = new THREE.Vector3(1, 0, 0);
 
 const acceleration = 18;
 const brakePower = 28;
@@ -375,19 +418,34 @@ const drag = 2.4;
 const baseForwardSpeed = 26;
 const maxForwardSpeed = 42;
 const maxReverseSpeed = -9;
-const steeringPower = 2.2;
+const steeringPower = 1.55;
 const totalLaps = 3;
 const barrierInset = 0.65;
 const grassDrag = 8.5;
 const grassMaxSpeed = 19;
 const handbrakePower = 18;
-const handbrakeSteeringBoost = 1.9;
+const handbrakeSteeringBoost = 2.35;
 const handbrakePivotAssist = 0.32;
-const finishCoastDrag = 5.5;
+const barrierGlanceRetention = 0.985;
+const barrierDirectHitRetention = 0.87;
+const finishCoastDrag = 18;
 const countdownDuration = 3;
 const throttleRampBuildRate = 0.1;
 const throttleRampDecayRate = 0.5;
 const overdriveAcceleration = 5;
+const rampCycleDuration = 8;
+const rampRaisedDuration = 3.2;
+const rampTransitionDuration = 0.9;
+const rampRaisedAngle = Math.PI / 4;
+const rampBoostAcceleration = 34;
+const rampBoostMaxSpeed = 50;
+const rampLaunchVelocity = 14;
+const gravity = 28;
+const carBaseHeight = 0.48;
+const wheelGroundOffset = 0.5;
+const wheelContactZ = 0.95;
+const rampLandingPitchRate = 7;
+const rampForward = new THREE.Vector3(1, 0, 0);
 const playerIdKey = "racingDemo.playerId";
 const playerNameKey = "racingDemo.playerName";
 const leaderboardKey = "racingDemo.leaderboard";
@@ -415,6 +473,7 @@ const playerState = {
 let leaderboardEntries: LeaderboardEntry[] = [];
 let leaderboardError: string | null = null;
 let currentView: "home" | "game" | "leaderboard" = "home";
+let isRampRaised = false;
 
 function isPressed(...codes: string[]) {
   return codes.some((code) => keys.has(code));
@@ -662,6 +721,19 @@ function setView(view: typeof currentView) {
     touchInput.throttle = false;
     touchInput.brake = false;
     resetTouchStick();
+
+    if (finishBanner) {
+      finishBanner.hidden = true;
+    }
+
+    if (usernameForm) {
+      usernameForm.hidden = true;
+    }
+
+    if (raceAnnouncement) {
+      raceAnnouncement.hidden = true;
+      raceAnnouncement.classList.remove("is-animating");
+    }
   }
 }
 
@@ -796,15 +868,170 @@ function clampCarToRoad() {
   const normalZ = distance > 0.001 ? offsetZ / distance : 1;
   carGroup.position.x = centerX + normalX * clampedDistance;
   carGroup.position.z = centerZ + normalZ * clampedDistance;
-  carState.speed *= -0.18;
+
+  const pushingOutward = distance > clampedDistance;
+  const wallNormalX = pushingOutward ? normalX : -normalX;
+  const wallNormalZ = pushingOutward ? normalZ : -normalZ;
+  const forwardIntoWall = Math.max(0, forward.x * wallNormalX + forward.z * wallNormalZ);
+  const retention = THREE.MathUtils.lerp(
+    barrierGlanceRetention,
+    barrierDirectHitRetention,
+    forwardIntoWall,
+  );
+
+  carState.speed *= retention;
+}
+
+function updateRamp(elapsedTime: number) {
+  const cycleTime = elapsedTime % rampCycleDuration;
+  const raisingEnd = rampTransitionDuration;
+  const raisedEnd = raisingEnd + rampRaisedDuration;
+  const loweringEnd = raisedEnd + rampTransitionDuration;
+
+  let raisedAmount = 0;
+
+  if (cycleTime < raisingEnd) {
+    raisedAmount = cycleTime / rampTransitionDuration;
+  } else if (cycleTime < raisedEnd) {
+    raisedAmount = 1;
+  } else if (cycleTime < loweringEnd) {
+    raisedAmount = 1 - (cycleTime - raisedEnd) / rampTransitionDuration;
+  }
+
+  raisedAmount = THREE.MathUtils.smoothstep(raisedAmount, 0, 1);
+  isRampRaised = raisedAmount > 0.92;
+  rampGroup.rotation.z = rampRaisedAngle * raisedAmount;
+  boosterMaterial.emissiveIntensity = isRampRaised ? 1.3 : 0.05;
+  boosterMaterial.opacity = isRampRaised ? 1 : 0.45;
+  boosterMaterial.transparent = true;
+}
+
+function getRampSurfaceAt(position: THREE.Vector3) {
+  const rampAngle = rampGroup.rotation.z;
+  const localX = (position.x - rampCenter.x) / Math.max(Math.cos(rampAngle), 0.001);
+  const localZ = position.z - rampCenter.z;
+  const isOverRamp =
+    localX >= 0 &&
+    localX <= rampLength &&
+    Math.abs(localZ) <= rampWidth / 2;
+
+  if (!isOverRamp) {
+    return {
+      height: 0,
+      pitch: 0,
+      localX,
+      isOnRamp: false,
+    };
+  }
+
+  return {
+    height: rampCenter.y + localX * Math.sin(rampAngle),
+    pitch: rampAngle,
+    localX,
+    isOnRamp: true,
+  };
+}
+
+function getWheelWorldPoint(localZ: number) {
+  const sideOffset = Math.sin(carState.heading) * localZ;
+  const forwardOffset = Math.cos(carState.heading) * localZ;
+  return new THREE.Vector3(carGroup.position.x + sideOffset, 0, carGroup.position.z + forwardOffset);
+}
+
+function getSupportedCarHeight(surfacePitch: number) {
+  const frontWheelPoint = getWheelWorldPoint(-wheelContactZ);
+  const rearWheelPoint = getWheelWorldPoint(wheelContactZ);
+  const frontSurface = getRampSurfaceAt(frontWheelPoint);
+  const rearSurface = getRampSurfaceAt(rearWheelPoint);
+  const frontWheelLocalY = -wheelGroundOffset * Math.cos(surfacePitch) + wheelContactZ * Math.sin(surfacePitch);
+  const rearWheelLocalY = -wheelGroundOffset * Math.cos(surfacePitch) - wheelContactZ * Math.sin(surfacePitch);
+
+  return Math.max(
+    frontSurface.height - frontWheelLocalY,
+    rearSurface.height - rearWheelLocalY,
+    carBaseHeight,
+  );
+}
+
+function applyRampBoost(deltaTime: number) {
+  if (!isRampRaised || raceState.isFinished || raceState.isCountdownActive || !raceState.isRunning) {
+    return;
+  }
+
+  const localPosition = rampGroup.worldToLocal(carGroup.position.clone());
+  const isInsideBoostZone =
+    localPosition.x >= -1 &&
+    localPosition.x <= rampLength + 1 &&
+    Math.abs(localPosition.z) <= rampWidth * 0.48;
+
+  if (!isInsideBoostZone || carState.speed <= 0) {
+    if (Math.abs(localPosition.x) > rampLength + 5) {
+      raceState.isRampLaunchArmed = true;
+    }
+    return;
+  }
+
+  carState.throttleRamp = Math.max(carState.throttleRamp, 0.85);
+  carState.speed = Math.min(carState.speed + rampBoostAcceleration * deltaTime, rampBoostMaxSpeed);
+}
+
+function updateSurfaceContact(deltaTime: number) {
+  const surface = getRampSurfaceAt(carGroup.position);
+  const isMovingWithRamp = forward.dot(rampForward) > 0.35;
+
+  if (
+    surface.isOnRamp &&
+    isRampRaised &&
+    isMovingWithRamp &&
+    raceState.isRampLaunchArmed &&
+    surface.localX > rampLength * 0.78 &&
+    carState.speed > 8
+  ) {
+    carState.isAirborne = true;
+    carState.verticalPosition = Math.max(carState.verticalPosition, 0.08);
+    carState.verticalVelocity =
+      rampLaunchVelocity + Math.max(0, carState.speed - baseForwardSpeed) * 0.16;
+    raceState.isRampLaunchArmed = false;
+  }
+
+  if (carState.isAirborne) {
+    carState.verticalVelocity -= gravity * deltaTime;
+    carState.verticalPosition += carState.verticalVelocity * deltaTime;
+
+    if (carState.verticalPosition <= 0) {
+      carState.verticalPosition = 0;
+      carState.verticalVelocity = 0;
+      carState.isAirborne = false;
+    }
+  } else {
+    carState.verticalPosition = 0;
+  }
+
+  if (!surface.isOnRamp && Math.abs(surface.localX) > rampLength + 5) {
+    raceState.isRampLaunchArmed = true;
+  }
+
+  const rampAlignment = THREE.MathUtils.clamp(forward.dot(rampForward), -1, 1);
+  const targetPitch = !carState.isAirborne && surface.isOnRamp ? surface.pitch * rampAlignment : 0;
+  carState.pitch = THREE.MathUtils.lerp(
+    carState.pitch,
+    targetPitch,
+    1 - Math.exp(-deltaTime * rampLandingPitchRate),
+  );
+  const supportedHeight = getSupportedCarHeight(carState.pitch);
+  carGroup.position.y = supportedHeight + carState.verticalPosition;
 }
 
 function resetCar() {
   carState.speed = 0;
   carState.heading = Math.PI / 2;
   carState.throttleRamp = 0;
+  carState.verticalPosition = 0;
+  carState.verticalVelocity = 0;
+  carState.pitch = 0;
+  carState.isAirborne = false;
   carGroup.position.set(0, 0.48, startLineZ);
-  carGroup.rotation.set(0, carState.heading, 0);
+  updateCarOrientation();
 
   raceState.currentLap = 1;
   raceState.elapsedTime = 0;
@@ -812,6 +1039,7 @@ function resetCar() {
   raceState.isFinished = false;
   raceState.isResultSaved = false;
   raceState.resultMessage = "Checking leaderboard...";
+  raceState.isRampLaunchArmed = true;
   raceState.isCountdownActive = false;
   raceState.countdownRemaining = 0;
   raceState.countdownLabel = "";
@@ -833,6 +1061,12 @@ function resetCar() {
   }
 
   playerState.pendingTime = null;
+}
+
+function updateCarOrientation() {
+  yawQuaternion.setFromAxisAngle(worldUp, carState.heading);
+  pitchQuaternion.setFromAxisAngle(localRight, carState.pitch);
+  carGroup.quaternion.copy(yawQuaternion).multiply(pitchQuaternion);
 }
 
 function updateCar(deltaTime: number) {
@@ -923,11 +1157,12 @@ function updateCar(deltaTime: number) {
     carState.speed = 0;
   }
 
+  applyRampBoost(deltaTime);
   forward.set(-Math.sin(carState.heading), 0, -Math.cos(carState.heading));
   carGroup.position.addScaledVector(forward, carState.speed * deltaTime);
-  carGroup.position.y = 0.48;
   clampCarToRoad();
-  carGroup.rotation.y = carState.heading;
+  updateSurfaceContact(deltaTime);
+  updateCarOrientation();
 
   for (const wheel of wheels) {
     wheel.rotation.x += carState.speed * deltaTime * 2.4;
@@ -991,13 +1226,13 @@ function updateRace(deltaTime: number) {
 
 function updateCamera(deltaTime: number) {
   cameraTarget.copy(carGroup.position);
-  desiredCameraPosition.copy(cameraTarget).addScaledVector(forward, -13);
-  desiredCameraPosition.y += 7.2;
+  desiredCameraPosition.copy(cameraTarget).addScaledVector(forward, -12);
+  desiredCameraPosition.y += 7.4;
 
   const followLerp = 1 - Math.exp(-deltaTime * 5);
   camera.position.lerp(desiredCameraPosition, followLerp);
 
-  cameraLookAt.copy(cameraTarget).addScaledVector(forward, 3);
+  cameraLookAt.copy(cameraTarget).addScaledVector(forward, 3.2);
   cameraLookAt.y += 1.4;
   camera.lookAt(cameraLookAt);
 }
@@ -1040,7 +1275,7 @@ function updateHud() {
   }
 
   if (finishBanner) {
-    finishBanner.hidden = !raceState.isFinished;
+    finishBanner.hidden = currentView !== "game" || !raceState.isFinished;
   }
 
   if (finishTimeDisplay) {
@@ -1072,7 +1307,9 @@ function resizeRenderer() {
 
 function animate() {
   const deltaTime = Math.min(clock.getDelta(), 0.05);
+  const elapsedTime = clock.getElapsedTime();
 
+  updateRamp(elapsedTime);
   if (currentView === "game") {
     updateCar(deltaTime);
     updateRace(deltaTime);
