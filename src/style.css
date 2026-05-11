@@ -556,7 +556,39 @@ p {
   }
 
   .hud {
-    transform: scale(0.88);
-    transform-origin: top left;
+    top: 10px;
+    right: auto;
+    bottom: auto;
+    left: 10px;
+    width: calc(100vw - 20px);
+    max-width: 430px;
+    height: auto;
+    padding: 10px 12px;
+    transform: none;
+  }
+
+  .hud h1,
+  .hud .eyebrow,
+  .race-status {
+    display: none;
+  }
+
+  .telemetry {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+  }
+
+  .telemetry div {
+    padding: 6px 7px;
+  }
+
+  .telemetry dt {
+    margin-bottom: 2px;
+    font-size: 0.56rem;
+  }
+
+  .telemetry dd {
+    font-size: 0.74rem;
   }
 }
