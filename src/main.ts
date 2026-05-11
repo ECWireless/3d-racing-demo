@@ -12,18 +12,18 @@ app.innerHTML = `
   <main class="home-screen" data-home-screen>
     <section class="home-panel">
       <p class="eyebrow">3D Racing Demo</p>
-      <h1>Arcade Oval</h1>
+      <h1>3D Racing Demo</h1>
       <button class="play-button" type="button" data-play-button>Play</button>
     </section>
     <button class="leaderboard-teaser" type="button" data-leaderboard-teaser>
-      <span class="eyebrow">Local leaderboard</span>
+      <span class="eyebrow">Leaderboard</span>
       <ol data-home-leaderboard-list></ol>
     </button>
   </main>
   <main class="leaderboard-page" data-leaderboard-page hidden>
     <section class="leaderboard-panel">
-      <p class="eyebrow">Local leaderboard</p>
-      <h1>Fastest laps</h1>
+      <p class="eyebrow">Leaderboard</p>
+      <h1>Best 3-lap times</h1>
       <ol data-full-leaderboard-list></ol>
       <div class="page-actions">
         <button type="button" data-leaderboard-back>Back</button>
@@ -55,7 +55,7 @@ app.innerHTML = `
     <p class="race-status" data-race-status>Get ready</p>
   </aside>
   <aside class="leaderboard" data-game-ui hidden>
-    <p class="eyebrow">Local leaderboard</p>
+    <p class="eyebrow">Leaderboard</p>
     <ol data-leaderboard-list></ol>
   </aside>
   <div class="mobile-controls" data-game-ui hidden>
@@ -391,11 +391,19 @@ type LeaderboardEntry = {
   completedAt: string;
 };
 
+type ApiLeaderboardRow = {
+  player_id: string;
+  username: string;
+  total_time_ms: number;
+  created_at: string;
+};
+
 const playerState = {
   id: getOrCreatePlayerId(),
   username: readStorage(playerNameKey),
   pendingTime: null as number | null,
 };
+let leaderboardEntries = getLeaderboard();
 let currentView: "home" | "game" | "leaderboard" = "home";
 
 function isPressed(...codes: string[]) {
@@ -462,7 +470,43 @@ function setLeaderboard(entries: LeaderboardEntry[]) {
   writeStorage(leaderboardKey, JSON.stringify(entries.slice(0, 10)));
 }
 
-function saveRaceResult(time: number) {
+function qualifiesForLeaderboard(time: number, entries = leaderboardEntries) {
+  if (entries.length < 10) {
+    return true;
+  }
+
+  return time < Math.max(...entries.slice(0, 10).map((entry) => entry.time));
+}
+
+async function loadRemoteLeaderboard() {
+  try {
+    const response = await fetch("/api/leaderboard");
+
+    if (!response.ok) {
+      throw new Error("Leaderboard API unavailable");
+    }
+
+    const body = (await response.json()) as { entries?: ApiLeaderboardRow[] };
+    leaderboardEntries = (body.entries ?? []).map((entry) => ({
+      id: `${entry.player_id}-${entry.created_at}`,
+      playerId: entry.player_id,
+      username: entry.username,
+      time: entry.total_time_ms / 1000,
+      completedAt: entry.created_at,
+    }));
+    renderLeaderboard();
+  } catch {
+    leaderboardEntries = getLeaderboard();
+    renderLeaderboard();
+  }
+}
+
+async function saveRaceResult(time: number) {
+  if (!qualifiesForLeaderboard(time)) {
+    showAnnouncement("Finished!", "No leaderboard time", 1.4);
+    return;
+  }
+
   const username = playerState.username?.trim();
 
   if (!username) {
@@ -480,12 +524,41 @@ function saveRaceResult(time: number) {
     completedAt: new Date().toISOString(),
   });
   entries.sort((first, second) => first.time - second.time);
+  entries.splice(10);
   setLeaderboard(entries);
+  leaderboardEntries = entries;
   renderLeaderboard();
+
+  try {
+    const response = await fetch("/api/results", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        playerId: playerState.id,
+        username,
+        totalLaps,
+        totalTimeMs: Math.round(time * 1000),
+      }),
+    });
+
+    const body = (await response.json()) as { saved?: boolean };
+
+    if (body.saved === false) {
+      leaderboardEntries = getLeaderboard();
+      renderLeaderboard();
+      return;
+    }
+
+    await loadRemoteLeaderboard();
+  } catch {
+    // Keep the local leaderboard as the offline fallback for the demo.
+  }
 }
 
 function renderLeaderboard() {
-  const entries = getLeaderboard().slice(0, 5);
+  const entries = leaderboardEntries.slice(0, 5);
   const compactHtml =
     entries.length > 0
       ? entries
@@ -507,7 +580,7 @@ function renderLeaderboard() {
   }
 
   if (fullLeaderboardList) {
-    const fullEntries = getLeaderboard().slice(0, 10);
+    const fullEntries = leaderboardEntries.slice(0, 10);
     fullLeaderboardList.innerHTML =
       fullEntries.length > 0
         ? fullEntries
@@ -1063,6 +1136,6 @@ touchStick?.addEventListener("pointercancel", resetTouchStick);
 touchStick?.addEventListener("lostpointercapture", resetTouchStick);
 bindTouchButton(touchAccelerate, "throttle");
 bindTouchButton(touchBrake, "brake");
-renderLeaderboard();
+void loadRemoteLeaderboard();
 setView("home");
 animate();
