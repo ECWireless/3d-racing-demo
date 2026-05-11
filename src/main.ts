@@ -11,7 +11,6 @@ app.innerHTML = `
   <canvas class="game-canvas" aria-label="3D racing demo viewport"></canvas>
   <main class="home-screen" data-home-screen>
     <section class="home-panel">
-      <p class="eyebrow">3D Racing Demo</p>
       <h1>3D Racing Demo</h1>
       <button class="play-button" type="button" data-play-button>Play</button>
     </section>
@@ -76,7 +75,10 @@ app.innerHTML = `
     <strong>Finished!</strong>
     <span data-finish-time>0:00.00</span>
     <span class="finish-result" data-finish-result>Checking leaderboard...</span>
-    <button type="button" data-retry-button>Retry</button>
+    <div class="finish-actions">
+      <button type="button" data-retry-button>Retry</button>
+      <button type="button" data-finish-leaderboard-button>Leaderboard</button>
+    </div>
   </div>
   <form class="username-modal" data-username-form hidden>
     <p class="eyebrow">First finish</p>
@@ -120,6 +122,8 @@ const finishBanner = document.querySelector<HTMLElement>("[data-finish-banner]")
 const finishTimeDisplay = document.querySelector<HTMLElement>("[data-finish-time]");
 const finishResultDisplay = document.querySelector<HTMLElement>("[data-finish-result]");
 const retryButton = document.querySelector<HTMLButtonElement>("[data-retry-button]");
+const finishLeaderboardButton =
+  document.querySelector<HTMLButtonElement>("[data-finish-leaderboard-button]");
 const usernameForm = document.querySelector<HTMLFormElement>("[data-username-form]");
 const usernameInput = document.querySelector<HTMLInputElement>("[data-username-input]");
 const raceAnnouncement = document.querySelector<HTMLElement>("[data-race-announcement]");
@@ -1130,6 +1134,10 @@ usernameForm?.addEventListener("submit", (event) => {
 playButton?.addEventListener("click", startGame);
 leaderboardPlayButton?.addEventListener("click", startGame);
 retryButton?.addEventListener("click", startGame);
+finishLeaderboardButton?.addEventListener("click", () => {
+  renderLeaderboard();
+  setView("leaderboard");
+});
 leaderboardTeaser?.addEventListener("click", () => {
   renderLeaderboard();
   setView("leaderboard");
