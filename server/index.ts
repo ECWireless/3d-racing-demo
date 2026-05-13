@@ -2,6 +2,15 @@ import "dotenv/config";
 import express from "express";
 import { z } from "zod";
 import { sql } from "./db";
+import {
+  createRoom,
+  finishPlayerRoomRace,
+  getRoomByCode,
+  joinRoom,
+  setRoomReady,
+  startRoom,
+  updatePlayerRaceState,
+} from "./rooms";
 
 const app = express();
 const port = Number(process.env.API_PORT ?? 8787);
@@ -18,10 +27,35 @@ const resultSchema = playerSchema.extend({
   totalLaps: z.number().int().positive().max(50).default(3),
 });
 
-function createRoomCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
-}
+const roomCodeSchema = z.string().trim().min(4).max(12);
+const joinRoomSchema = playerSchema.extend({
+  code: roomCodeSchema,
+});
+const readySchema = z.object({
+  code: roomCodeSchema,
+  playerId: z.string().uuid(),
+  isReady: z.boolean(),
+});
+const startSchema = z.object({
+  code: roomCodeSchema,
+  playerId: z.string().uuid(),
+});
+const raceStateSchema = z.object({
+  code: roomCodeSchema,
+  playerId: z.string().uuid(),
+  positionX: z.number().finite(),
+  positionY: z.number().finite(),
+  positionZ: z.number().finite(),
+  heading: z.number().finite(),
+  pitch: z.number().finite(),
+  speed: z.number().finite(),
+  currentLap: z.number().int().positive().max(50),
+});
+const finishSchema = z.object({
+  code: roomCodeSchema,
+  playerId: z.string().uuid(),
+  totalTimeMs: z.number().int().positive().max(60 * 60 * 1000),
+});
 
 app.get("/api/health", (_request, response) => {
   response.json({ ok: true });
@@ -117,29 +151,109 @@ app.post("/api/results", async (request, response, next) => {
 
 app.post("/api/rooms", async (request, response, next) => {
   try {
-    const player = playerSchema.parse(request.body);
-    const code = createRoomCode();
+    const body = request.body as { action?: string };
 
-    await sql`
-      insert into players (id, username)
-      values (${player.playerId}, ${player.username})
-      on conflict (id) do update
-        set username = excluded.username,
-            updated_at = now()
-    `;
+    if (body.action === "create") {
+      const player = playerSchema.parse(request.body);
+      const room = await createRoom(sql, player.playerId, player.username);
+      response.status(201).json({ room });
+      return;
+    }
 
-    const rooms = await sql`
-      insert into race_rooms (code, host_player_id)
-      values (${code}, ${player.playerId})
-      returning id, code, status, created_at
-    `;
+    if (body.action === "join") {
+      const joinRequest = joinRoomSchema.parse(request.body);
+      const room = await joinRoom(sql, joinRequest.code, joinRequest.playerId, joinRequest.username);
 
-    await sql`
-      insert into race_room_players (room_id, player_id, username)
-      values (${rooms[0].id}, ${player.playerId}, ${player.username})
-    `;
+      if (!room) {
+        response.status(404).json({ error: "Room not found" });
+        return;
+      }
 
-    response.status(201).json({ room: rooms[0] });
+      response.json({ room });
+      return;
+    }
+
+    if (body.action === "ready") {
+      const readyRequest = readySchema.parse(request.body);
+      const room = await setRoomReady(
+        sql,
+        readyRequest.code,
+        readyRequest.playerId,
+        readyRequest.isReady,
+      );
+
+      if (!room) {
+        response.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      response.json({ room });
+      return;
+    }
+
+    if (body.action === "start") {
+      const startRequest = startSchema.parse(request.body);
+      const room = await startRoom(sql, startRequest.code, startRequest.playerId);
+
+      if (!room) {
+        response.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      response.json({ room });
+      return;
+    }
+
+    if (body.action === "state") {
+      const stateRequest = raceStateSchema.parse(request.body);
+      const room = await updatePlayerRaceState(
+        sql,
+        stateRequest.code,
+        stateRequest.playerId,
+        stateRequest,
+      );
+
+      if (!room) {
+        response.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      response.json({ room });
+      return;
+    }
+
+    if (body.action === "finish") {
+      const finishRequest = finishSchema.parse(request.body);
+      const room = await finishPlayerRoomRace(sql, finishRequest.code, finishRequest.playerId, {
+        totalTimeMs: finishRequest.totalTimeMs,
+      });
+
+      if (!room) {
+        response.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      response.json({ room });
+      return;
+    }
+
+    response.status(400).json({ error: "Unknown room action" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/rooms", async (request, response, next) => {
+  try {
+    const code = roomCodeSchema.parse(request.query.code);
+    const room = await getRoomByCode(sql, code);
+
+    if (!room) {
+      response.status(404).json({ error: "Room not found" });
+      return;
+    }
+
+    response.json({ room });
   } catch (error) {
     next(error);
   }
