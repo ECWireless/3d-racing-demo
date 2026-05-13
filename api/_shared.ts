@@ -46,6 +46,7 @@ export function handleApiError(error: unknown, response: Response) {
 export type Request = {
   method?: string;
   body?: unknown;
+  url?: string;
 };
 
 export type Response = {

@@ -43,9 +43,33 @@ await sql`
     room_id uuid not null references race_rooms(id) on delete cascade,
     player_id uuid not null references players(id),
     username text not null,
+    slot integer not null default 1,
+    is_ready boolean not null default false,
     joined_at timestamptz not null default now(),
     primary key (room_id, player_id)
   )
+`;
+
+await sql`
+  alter table race_room_players
+    add column if not exists slot integer not null default 1
+`;
+
+await sql`
+  alter table race_room_players
+    add column if not exists is_ready boolean not null default false
+`;
+
+await sql`
+  alter table race_room_players
+    add column if not exists position_x double precision,
+    add column if not exists position_y double precision,
+    add column if not exists position_z double precision,
+    add column if not exists heading double precision,
+    add column if not exists pitch double precision,
+    add column if not exists speed double precision,
+    add column if not exists current_lap integer not null default 1,
+    add column if not exists state_updated_at timestamptz
 `;
 
 await sql`

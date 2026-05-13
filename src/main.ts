@@ -12,7 +12,15 @@ app.innerHTML = `
   <main class="home-screen" data-home-screen>
     <section class="home-panel">
       <h1>3D Racing Demo</h1>
-      <button class="play-button" type="button" data-play-button>Play</button>
+      <div class="home-actions">
+        <button class="play-button" type="button" data-play-button>Solo Race</button>
+        <button type="button" data-create-room-button>Create Room</button>
+      </div>
+      <form class="join-room-form" data-join-room-form>
+        <input data-join-room-code maxlength="6" placeholder="Room code" aria-label="Room code" />
+        <button type="submit">Join</button>
+      </form>
+      <p class="home-error" data-home-error hidden></p>
     </section>
     <button class="leaderboard-teaser" type="button" data-leaderboard-teaser>
       <span class="eyebrow">Leaderboard</span>
@@ -26,7 +34,32 @@ app.innerHTML = `
       <ol data-full-leaderboard-list></ol>
       <div class="page-actions">
         <button type="button" data-leaderboard-back>Back</button>
-        <button type="button" data-leaderboard-play>Play</button>
+        <button type="button" data-leaderboard-play>Solo Race</button>
+      </div>
+    </section>
+  </main>
+  <main class="lobby-page" data-lobby-page hidden>
+    <section class="lobby-panel">
+      <h1>Race lobby</h1>
+      <div class="room-code-card" aria-label="Room code">
+        <span class="eyebrow">Share this code</span>
+        <div class="room-code-row">
+          <strong data-room-code>------</strong>
+          <button class="copy-room-code" type="button" data-copy-room-code aria-label="Copy room code">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+              <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+            </svg>
+            <span data-copy-room-code-label>Copy</span>
+          </button>
+        </div>
+      </div>
+      <ul data-room-players></ul>
+      <p class="lobby-status" data-lobby-status>Waiting for another racer...</p>
+      <div class="page-actions">
+        <button type="button" data-lobby-back>Back</button>
+        <button type="button" data-ready-button>Ready</button>
+        <button type="button" data-start-room-button>Start Race</button>
       </div>
     </section>
   </main>
@@ -103,17 +136,30 @@ const raceStatusDisplay = document.querySelector<HTMLElement>("[data-race-status
 const leaderboardList = document.querySelector<HTMLOListElement>("[data-leaderboard-list]");
 const homeScreen = document.querySelector<HTMLElement>("[data-home-screen]");
 const leaderboardPage = document.querySelector<HTMLElement>("[data-leaderboard-page]");
+const lobbyPage = document.querySelector<HTMLElement>("[data-lobby-page]");
 const homeLeaderboardList =
   document.querySelector<HTMLOListElement>("[data-home-leaderboard-list]");
 const fullLeaderboardList =
   document.querySelector<HTMLOListElement>("[data-full-leaderboard-list]");
 const playButton = document.querySelector<HTMLButtonElement>("[data-play-button]");
 const leaderboardTeaser = document.querySelector<HTMLButtonElement>("[data-leaderboard-teaser]");
+const createRoomButton = document.querySelector<HTMLButtonElement>("[data-create-room-button]");
+const joinRoomForm = document.querySelector<HTMLFormElement>("[data-join-room-form]");
+const joinRoomCodeInput = document.querySelector<HTMLInputElement>("[data-join-room-code]");
+const homeError = document.querySelector<HTMLElement>("[data-home-error]");
 const leaderboardBackButton =
   document.querySelector<HTMLButtonElement>("[data-leaderboard-back]");
 const leaderboardPlayButton =
   document.querySelector<HTMLButtonElement>("[data-leaderboard-play]");
 const gameUiElements = document.querySelectorAll<HTMLElement>("[data-game-ui]");
+const roomCodeDisplay = document.querySelector<HTMLElement>("[data-room-code]");
+const copyRoomCodeButton = document.querySelector<HTMLButtonElement>("[data-copy-room-code]");
+const copyRoomCodeLabel = document.querySelector<HTMLElement>("[data-copy-room-code-label]");
+const roomPlayersList = document.querySelector<HTMLElement>("[data-room-players]");
+const lobbyStatus = document.querySelector<HTMLElement>("[data-lobby-status]");
+const lobbyBackButton = document.querySelector<HTMLButtonElement>("[data-lobby-back]");
+const readyButton = document.querySelector<HTMLButtonElement>("[data-ready-button]");
+const startRoomButton = document.querySelector<HTMLButtonElement>("[data-start-room-button]");
 const touchStick = document.querySelector<HTMLElement>("[data-touch-stick]");
 const touchStickKnob = document.querySelector<HTMLElement>("[data-touch-stick-knob]");
 const touchAccelerate = document.querySelector<HTMLButtonElement>("[data-touch-accelerate]");
@@ -371,6 +417,62 @@ for (const [x, y, z] of wheelPositions) {
   wheels.push(wheel);
 }
 
+function createRemoteKart() {
+  const group = new THREE.Group();
+  group.visible = false;
+
+  const ghostBodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4cc9f0,
+    emissive: 0x12384a,
+    emissiveIntensity: 0.28,
+    metalness: 0.08,
+    opacity: 0.58,
+    roughness: 0.42,
+    transparent: true,
+  });
+  const ghostCabinMaterial = new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    emissive: 0x223344,
+    emissiveIntensity: 0.16,
+    opacity: 0.52,
+    roughness: 0.2,
+    transparent: true,
+  });
+  const ghostWheelMaterial = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    opacity: 0.46,
+    roughness: 0.72,
+    transparent: true,
+  });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.55, 3), ghostBodyMaterial);
+  group.add(body);
+
+  const ghostCabin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.45, 1.05), ghostCabinMaterial);
+  ghostCabin.position.set(0, 0.48, -0.25);
+  group.add(ghostCabin);
+
+  for (const [x, y, z] of wheelPositions) {
+    const wheel = new THREE.Mesh(wheelGeometry, ghostWheelMaterial);
+    wheel.position.set(x, y, z);
+    wheel.rotation.z = Math.PI / 2;
+    group.add(wheel);
+  }
+
+  scene.add(group);
+  return group;
+}
+
+const remoteKartGroup = createRemoteKart();
+const remoteKartTarget = {
+  position: new THREE.Vector3(),
+  heading: Math.PI / 2,
+  pitch: 0,
+  updatedAt: 0,
+};
+const remoteYawQuaternion = new THREE.Quaternion();
+const remotePitchQuaternion = new THREE.Quaternion();
+
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const touchInput = {
@@ -465,6 +567,40 @@ type ApiLeaderboardRow = {
   created_at: string;
 };
 
+type RoomPlayer = {
+  player_id: string;
+  username: string;
+  slot: number;
+  is_ready: boolean;
+  position_x: number | null;
+  position_y: number | null;
+  position_z: number | null;
+  heading: number | null;
+  pitch: number | null;
+  speed: number | null;
+  current_lap: number;
+  state_updated_at: string | null;
+};
+
+type RoomResult = {
+  player_id: string;
+  username: string;
+  slot: number;
+  total_time_ms: number;
+  finished_at: string;
+};
+
+type RaceRoom = {
+  id: string;
+  code: string;
+  status: "waiting" | "racing" | "finished";
+  host_player_id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  players: RoomPlayer[];
+  results: RoomResult[];
+};
+
 const playerState = {
   id: getOrCreatePlayerId(),
   username: readStorage(playerNameKey),
@@ -472,7 +608,15 @@ const playerState = {
 };
 let leaderboardEntries: LeaderboardEntry[] = [];
 let leaderboardError: string | null = null;
-let currentView: "home" | "game" | "leaderboard" = "home";
+let currentView: "home" | "game" | "leaderboard" | "lobby" = "home";
+let activeRoom: RaceRoom | null = null;
+let lobbyPollTimer: number | null = null;
+const multiplayerSyncState = {
+  lastPullAt: 0,
+  lastPushAt: 0,
+  isPulling: false,
+  isPushing: false,
+};
 let isRampRaised = false;
 
 function isPressed(...codes: string[]) {
@@ -629,6 +773,63 @@ async function saveRaceResult(time: number) {
   }
 }
 
+function updateMultiplayerResultMessage() {
+  if (!activeRoom || !raceState.isFinished) {
+    return;
+  }
+
+  const sortedResults = [...activeRoom.results].sort(
+    (a, b) => a.total_time_ms - b.total_time_ms,
+  );
+  const ownResultIndex = sortedResults.findIndex((result) => result.player_id === playerState.id);
+
+  if (ownResultIndex === -1) {
+    raceState.resultMessage = "Finished. Saving room result...";
+    return;
+  }
+
+  if (activeRoom.status !== "finished" && sortedResults.length < activeRoom.players.length) {
+    raceState.resultMessage = "Finished. Waiting for the other racer...";
+    return;
+  }
+
+  raceState.resultMessage =
+    ownResultIndex === 0
+      ? "You won the room race. Retry?"
+      : `Room place #${ownResultIndex + 1}. Retry?`;
+}
+
+async function saveMultiplayerRaceResult(time: number) {
+  if (!activeRoom) {
+    await saveRaceResult(time);
+    return;
+  }
+
+  raceState.resultMessage = "Saving room result...";
+
+  try {
+    const room = await roomRequest({
+      action: "finish",
+      code: activeRoom.code,
+      playerId: playerState.id,
+      totalTimeMs: Math.round(time * 1000),
+    });
+    activeRoom = room;
+    updateMultiplayerResultMessage();
+  } catch {
+    raceState.resultMessage = "Could not save room result. Retry?";
+  }
+}
+
+function saveFinishedRace(time: number) {
+  if (activeRoom?.status === "racing") {
+    void saveMultiplayerRaceResult(time);
+    return;
+  }
+
+  void saveRaceResult(time);
+}
+
 function renderLeaderboard() {
   const entries = leaderboardEntries.slice(0, 5);
   const compactHtml =
@@ -701,6 +902,37 @@ function showUsernamePrompt() {
   usernameInput.focus();
 }
 
+function getPlayerName() {
+  const username = playerState.username?.trim();
+
+  if (username) {
+    return username;
+  }
+
+  const generatedName = `Racer-${playerState.id.slice(0, 4)}`;
+  playerState.username = generatedName;
+  writeStorage(playerNameKey, generatedName);
+  return generatedName;
+}
+
+function showHomeError(message: string) {
+  if (!homeError) {
+    return;
+  }
+
+  homeError.hidden = false;
+  homeError.textContent = message;
+}
+
+function clearHomeError() {
+  if (!homeError) {
+    return;
+  }
+
+  homeError.hidden = true;
+  homeError.textContent = "";
+}
+
 function setView(view: typeof currentView) {
   currentView = view;
 
@@ -710,6 +942,10 @@ function setView(view: typeof currentView) {
 
   if (leaderboardPage) {
     leaderboardPage.hidden = view !== "leaderboard";
+  }
+
+  if (lobbyPage) {
+    lobbyPage.hidden = view !== "lobby";
   }
 
   for (const element of gameUiElements) {
@@ -738,9 +974,247 @@ function setView(view: typeof currentView) {
 }
 
 function startGame() {
+  stopLobbyPolling();
+  remoteKartGroup.visible = false;
+  multiplayerSyncState.lastPullAt = 0;
+  multiplayerSyncState.lastPushAt = 0;
   resetCar();
   setView("game");
-  startCountdown();
+  startCountdown(getRaceStartDelay());
+}
+
+async function roomRequest(body: Record<string, unknown>) {
+  const response = await fetch("/api/rooms", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = (await response.json()) as { room?: RaceRoom; error?: string };
+
+  if (!response.ok || !payload.room) {
+    throw new Error(payload.error ?? `Room API returned ${response.status}`);
+  }
+
+  activeRoom = payload.room;
+  renderLobby();
+  updateMultiplayerResultMessage();
+  return payload.room;
+}
+
+async function fetchActiveRoom() {
+  if (!activeRoom) {
+    return null;
+  }
+
+  const response = await fetch(`/api/rooms?code=${encodeURIComponent(activeRoom.code)}`);
+  const payload = (await response.json()) as { room?: RaceRoom; error?: string };
+
+  if (!response.ok || !payload.room) {
+    throw new Error(payload.error ?? `Room API returned ${response.status}`);
+  }
+
+  activeRoom = payload.room;
+  renderLobby();
+  updateMultiplayerResultMessage();
+
+  if (activeRoom.status === "racing" && currentView !== "game") {
+    startGame();
+  }
+
+  return activeRoom;
+}
+
+function hasActiveMultiplayerRace() {
+  return currentView === "game" && activeRoom?.status === "racing";
+}
+
+function getRaceStartDelay() {
+  if (activeRoom?.status === "racing" && activeRoom.started_at) {
+    const startTime = Date.parse(activeRoom.started_at);
+
+    if (Number.isFinite(startTime)) {
+      return Math.max((startTime - Date.now()) / 1000, 0.05);
+    }
+  }
+
+  return countdownDuration;
+}
+
+async function pushMultiplayerState() {
+  if (!activeRoom || multiplayerSyncState.isPushing) {
+    return;
+  }
+
+  multiplayerSyncState.isPushing = true;
+
+  try {
+    const room = await roomRequest({
+      action: "state",
+      code: activeRoom.code,
+      playerId: playerState.id,
+      positionX: carGroup.position.x,
+      positionY: carGroup.position.y,
+      positionZ: carGroup.position.z,
+      heading: carState.heading,
+      pitch: carState.pitch,
+      speed: carState.speed,
+      currentLap: raceState.currentLap,
+    });
+
+    activeRoom = room;
+  } finally {
+    multiplayerSyncState.isPushing = false;
+  }
+}
+
+async function pullMultiplayerState() {
+  if (!activeRoom || multiplayerSyncState.isPulling) {
+    return;
+  }
+
+  multiplayerSyncState.isPulling = true;
+
+  try {
+    await fetchActiveRoom();
+  } finally {
+    multiplayerSyncState.isPulling = false;
+  }
+}
+
+function syncMultiplayerRoom(elapsedTime: number) {
+  if (!hasActiveMultiplayerRace()) {
+    remoteKartGroup.visible = false;
+    return;
+  }
+
+  if (elapsedTime - multiplayerSyncState.lastPushAt > 0.16) {
+    multiplayerSyncState.lastPushAt = elapsedTime;
+    void pushMultiplayerState().catch(() => {
+      multiplayerSyncState.isPushing = false;
+    });
+  }
+
+  if (elapsedTime - multiplayerSyncState.lastPullAt > 0.32) {
+    multiplayerSyncState.lastPullAt = elapsedTime;
+    void pullMultiplayerState().catch(() => {
+      multiplayerSyncState.isPulling = false;
+    });
+  }
+}
+
+function startLobbyPolling() {
+  stopLobbyPolling();
+  lobbyPollTimer = window.setInterval(() => {
+    void fetchActiveRoom().catch((error) => {
+      if (lobbyStatus) {
+        lobbyStatus.textContent = error instanceof Error ? error.message : "Could not refresh room";
+      }
+    });
+  }, 1200);
+}
+
+function stopLobbyPolling() {
+  if (lobbyPollTimer !== null) {
+    window.clearInterval(lobbyPollTimer);
+    lobbyPollTimer = null;
+  }
+}
+
+function renderLobby() {
+  if (!activeRoom) {
+    return;
+  }
+
+  const isHost = activeRoom.host_player_id === playerState.id;
+  const currentPlayer = activeRoom.players.find((player) => player.player_id === playerState.id);
+
+  if (roomCodeDisplay) {
+    roomCodeDisplay.textContent = activeRoom.code;
+  }
+
+  if (copyRoomCodeLabel && copyRoomCodeLabel.textContent !== "Copied") {
+    copyRoomCodeLabel.textContent = "Copy";
+  }
+
+  if (roomPlayersList) {
+    roomPlayersList.innerHTML = activeRoom.players
+      .map(
+        (player) =>
+          `<li>
+            <span>Slot ${player.slot}: ${escapeHtml(player.username)}</span>
+            <strong>${player.is_ready ? "Ready" : "Waiting"}</strong>
+          </li>`,
+      )
+      .join("");
+  }
+
+  if (lobbyStatus) {
+    lobbyStatus.textContent =
+      activeRoom.players.length < 2
+        ? "Share the room code with a friend."
+        : isHost
+          ? "Start when both players are ready."
+          : "Waiting for the host to start.";
+  }
+
+  if (readyButton) {
+    readyButton.textContent = currentPlayer?.is_ready ? "Unready" : "Ready";
+  }
+
+  if (startRoomButton) {
+    startRoomButton.hidden = !isHost;
+    startRoomButton.disabled =
+      activeRoom.players.length < 2 || activeRoom.players.some((player) => !player.is_ready);
+  }
+}
+
+async function copyActiveRoomCode() {
+  if (!activeRoom) {
+    return;
+  }
+
+  const roomCode = activeRoom.code;
+  const copyWithHiddenField = () => {
+    const field = document.createElement("textarea");
+    field.value = roomCode;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    document.execCommand("copy");
+    field.remove();
+  };
+
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+    } catch {
+      copyWithHiddenField();
+    }
+  } else {
+    copyWithHiddenField();
+  }
+
+  if (copyRoomCodeLabel) {
+    const label = copyRoomCodeLabel;
+    label.textContent = "Copied";
+    window.setTimeout(() => {
+      if (label.textContent === "Copied") {
+        label.textContent = "Copy";
+      }
+    }, 1400);
+  }
+}
+
+async function enterLobby(room: RaceRoom) {
+  activeRoom = room;
+  renderLobby();
+  setView("lobby");
+  startLobbyPolling();
 }
 
 function resetTouchStick() {
@@ -827,11 +1301,11 @@ function updateAnnouncement(deltaTime: number) {
   }
 }
 
-function startCountdown() {
+function startCountdown(duration = countdownDuration) {
   raceState.isCountdownActive = true;
-  raceState.countdownRemaining = countdownDuration;
-  raceState.countdownLabel = "3";
-  showAnnouncement("3", "Get ready", 1);
+  raceState.countdownRemaining = duration;
+  raceState.countdownLabel = Math.max(Math.ceil(duration), 1).toString();
+  showAnnouncement(raceState.countdownLabel, "Get ready", 1);
 }
 
 function getTrackCenterX(positionX: number) {
@@ -1069,6 +1543,50 @@ function updateCarOrientation() {
   carGroup.quaternion.copy(yawQuaternion).multiply(pitchQuaternion);
 }
 
+function updateRemoteKart(deltaTime: number) {
+  const remotePlayer = activeRoom?.players.find((player) => player.player_id !== playerState.id);
+
+  if (
+    !hasActiveMultiplayerRace() ||
+    !remotePlayer ||
+    remotePlayer.position_x === null ||
+    remotePlayer.position_y === null ||
+    remotePlayer.position_z === null ||
+    remotePlayer.heading === null ||
+    remotePlayer.pitch === null ||
+    !remotePlayer.state_updated_at
+  ) {
+    remoteKartGroup.visible = false;
+    return;
+  }
+
+  const updatedAt = Date.parse(remotePlayer.state_updated_at);
+  if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 3000) {
+    remoteKartGroup.visible = false;
+    return;
+  }
+
+  remoteKartGroup.visible = true;
+  remoteKartTarget.position.set(
+    Number(remotePlayer.position_x),
+    Number(remotePlayer.position_y),
+    Number(remotePlayer.position_z),
+  );
+  remoteKartTarget.heading = Number(remotePlayer.heading);
+  remoteKartTarget.pitch = Number(remotePlayer.pitch);
+  remoteKartTarget.updatedAt = updatedAt;
+
+  const follow = 1 - Math.exp(-deltaTime * 9);
+  remoteKartGroup.position.lerp(remoteKartTarget.position, follow);
+
+  remoteYawQuaternion.setFromAxisAngle(worldUp, remoteKartTarget.heading);
+  remotePitchQuaternion.setFromAxisAngle(localRight, remoteKartTarget.pitch);
+  remoteKartGroup.quaternion.slerp(
+    remoteYawQuaternion.multiply(remotePitchQuaternion),
+    follow,
+  );
+}
+
 function updateCar(deltaTime: number) {
   const throttle = getThrottleInput();
   const brake = getBrakeInput();
@@ -1208,8 +1726,8 @@ function updateRace(deltaTime: number) {
       raceState.isRunning = false;
       raceState.elapsedTime = Math.max(raceState.elapsedTime, 0);
       raceState.isResultSaved = true;
-      raceState.resultMessage = "Checking leaderboard...";
-      void saveRaceResult(raceState.elapsedTime);
+      raceState.resultMessage = activeRoom ? "Saving room result..." : "Checking leaderboard...";
+      saveFinishedRace(raceState.elapsedTime);
     } else {
       raceState.currentLap += 1;
       raceState.isLapArmed = false;
@@ -1313,8 +1831,10 @@ function animate() {
   if (currentView === "game") {
     updateCar(deltaTime);
     updateRace(deltaTime);
+    syncMultiplayerRoom(elapsedTime);
   }
 
+  updateRemoteKart(deltaTime);
   updateCamera(deltaTime);
   updateHud();
   updateAnnouncement(deltaTime);
@@ -1369,6 +1889,35 @@ usernameForm?.addEventListener("submit", (event) => {
   }
 });
 playButton?.addEventListener("click", startGame);
+createRoomButton?.addEventListener("click", () => {
+  clearHomeError();
+  void roomRequest({
+    action: "create",
+    playerId: playerState.id,
+    username: getPlayerName(),
+  })
+    .then(enterLobby)
+    .catch((error) => showHomeError(error instanceof Error ? error.message : "Could not create room"));
+});
+joinRoomForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  clearHomeError();
+  const code = joinRoomCodeInput?.value.trim().toUpperCase();
+
+  if (!code) {
+    showHomeError("Enter a room code.");
+    return;
+  }
+
+  void roomRequest({
+    action: "join",
+    code,
+    playerId: playerState.id,
+    username: getPlayerName(),
+  })
+    .then(enterLobby)
+    .catch((error) => showHomeError(error instanceof Error ? error.message : "Could not join room"));
+});
 leaderboardPlayButton?.addEventListener("click", startGame);
 retryButton?.addEventListener("click", startGame);
 finishLeaderboardButton?.addEventListener("click", () => {
@@ -1381,6 +1930,56 @@ leaderboardTeaser?.addEventListener("click", () => {
 });
 leaderboardBackButton?.addEventListener("click", () => {
   setView("home");
+});
+lobbyBackButton?.addEventListener("click", () => {
+  stopLobbyPolling();
+  activeRoom = null;
+  setView("home");
+});
+copyRoomCodeButton?.addEventListener("click", () => {
+  void copyActiveRoomCode().catch(() => {
+    if (lobbyStatus) {
+      lobbyStatus.textContent = "Could not copy room code.";
+    }
+  });
+});
+readyButton?.addEventListener("click", () => {
+  if (!activeRoom) {
+    return;
+  }
+
+  const currentPlayer = activeRoom.players.find((player) => player.player_id === playerState.id);
+  void roomRequest({
+    action: "ready",
+    code: activeRoom.code,
+    playerId: playerState.id,
+    isReady: !currentPlayer?.is_ready,
+  }).catch((error) => {
+    if (lobbyStatus) {
+      lobbyStatus.textContent = error instanceof Error ? error.message : "Could not update ready state";
+    }
+  });
+});
+startRoomButton?.addEventListener("click", () => {
+  if (!activeRoom) {
+    return;
+  }
+
+  void roomRequest({
+    action: "start",
+    code: activeRoom.code,
+    playerId: playerState.id,
+  })
+    .then((room) => {
+      if (room.status === "racing") {
+        startGame();
+      }
+    })
+    .catch((error) => {
+      if (lobbyStatus) {
+        lobbyStatus.textContent = error instanceof Error ? error.message : "Could not start room";
+      }
+    });
 });
 touchStick?.addEventListener("pointerdown", (event) => {
   event.preventDefault();
