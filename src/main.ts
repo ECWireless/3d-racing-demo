@@ -668,11 +668,13 @@ const multiplayerSyncState = {
   isPulling: false,
   isPushing: false,
 };
-const multiplayerPushInterval = 0.1;
-const multiplayerPullInterval = 0.18;
-const remoteInterpolationDelayMs = 150;
-const remoteSnapshotMaxAgeMs = 3500;
-const remoteMaxExtrapolationMs = 220;
+const multiplayerPushInterval = 0.07;
+const multiplayerPullInterval = 0.12;
+const remoteInterpolationDelayMs = 70;
+const remoteSnapshotMaxAgeMs = 2500;
+const remoteMaxExtrapolationMs = 420;
+const remotePredictionMs = 90;
+const remoteCorrectionSnapDistance = 10;
 let isRampRaised = false;
 
 function isPressed(...codes: string[]) {
@@ -1676,6 +1678,17 @@ function interpolateAngle(from: number, to: number, amount: number) {
   return from + getShortestAngleDelta(from, to) * amount;
 }
 
+function projectRemotePosition(
+  target: THREE.Vector3,
+  heading: number,
+  speed: number,
+  milliseconds: number,
+) {
+  const seconds = Math.max(milliseconds, 0) / 1000;
+  target.x += -Math.sin(heading) * speed * seconds;
+  target.z += -Math.cos(heading) * speed * seconds;
+}
+
 function pushRemoteKartSnapshot(remotePlayer: RoomPlayer) {
   if (
     remotePlayer.position_x === null ||
@@ -1699,6 +1712,10 @@ function pushRemoteKartSnapshot(remotePlayer: RoomPlayer) {
 
   if (lastSnapshot && lastSnapshot.updatedAt >= updatedAt) {
     return;
+  }
+
+  if (lastSnapshot && updatedAt - lastSnapshot.updatedAt > remoteSnapshotMaxAgeMs) {
+    remoteKartSnapshots.length = 0;
   }
 
   remoteKartSnapshots.push({
@@ -1740,10 +1757,9 @@ function sampleRemoteKartSnapshot() {
   }
 
   if (!next) {
-    const extrapolationTime = Math.min(now - previous.updatedAt, remoteMaxExtrapolationMs) / 1000;
+    const extrapolationMs = Math.min(now - previous.updatedAt, remoteMaxExtrapolationMs);
     remoteKartTarget.position.copy(previous.position);
-    remoteKartTarget.position.x += -Math.sin(previous.heading) * previous.speed * extrapolationTime;
-    remoteKartTarget.position.z += -Math.cos(previous.heading) * previous.speed * extrapolationTime;
+    projectRemotePosition(remoteKartTarget.position, previous.heading, previous.speed, extrapolationMs);
     remoteKartTarget.heading = previous.heading;
     remoteKartTarget.pitch = previous.pitch;
     remoteKartTarget.updatedAt = previous.updatedAt;
@@ -1757,6 +1773,12 @@ function sampleRemoteKartSnapshot() {
   remoteKartTarget.heading = interpolateAngle(previous.heading, next.heading, amount);
   remoteKartTarget.pitch = THREE.MathUtils.lerp(previous.pitch, next.pitch, amount);
   remoteKartTarget.updatedAt = next.updatedAt;
+  projectRemotePosition(
+    remoteKartTarget.position,
+    remoteKartTarget.heading,
+    THREE.MathUtils.lerp(previous.speed, next.speed, amount),
+    remotePredictionMs,
+  );
   return remoteKartTarget;
 }
 
@@ -1778,8 +1800,14 @@ function updateRemoteKart(deltaTime: number) {
   }
 
   remoteKartGroup.visible = true;
-  const follow = 1 - Math.exp(-deltaTime * 14);
-  remoteKartGroup.position.lerp(snapshot.position, follow);
+  const distanceToTarget = remoteKartGroup.position.distanceTo(snapshot.position);
+  const follow = 1 - Math.exp(-deltaTime * 24);
+
+  if (distanceToTarget > remoteCorrectionSnapDistance) {
+    remoteKartGroup.position.copy(snapshot.position);
+  } else {
+    remoteKartGroup.position.lerp(snapshot.position, follow);
+  }
 
   remoteYawQuaternion.setFromAxisAngle(worldUp, snapshot.heading);
   remotePitchQuaternion.setFromAxisAngle(localRight, snapshot.pitch);
