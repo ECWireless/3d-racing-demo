@@ -526,6 +526,7 @@ const clock = new THREE.Clock();
 const keys = new Set<string>();
 const touchInput = {
   throttle: false,
+  stickThrottle: 0,
   brake: false,
   steering: 0,
   stickPointerId: null as number | null,
@@ -679,7 +680,7 @@ function isPressed(...codes: string[]) {
 }
 
 function getThrottleInput() {
-  return touchInput.throttle || isPressed("KeyW", "ArrowUp");
+  return touchInput.throttle || touchInput.stickThrottle > 0.2 || isPressed("KeyW", "ArrowUp");
 }
 
 function getBrakeInput() {
@@ -1004,6 +1005,7 @@ function openPauseMenu() {
   isPauseMenuOpen = true;
   keys.clear();
   touchInput.throttle = false;
+  touchInput.stickThrottle = 0;
   touchInput.brake = false;
   resetTouchStick();
 
@@ -1051,6 +1053,7 @@ function setView(view: typeof currentView) {
     closePauseMenu();
     keys.clear();
     touchInput.throttle = false;
+    touchInput.stickThrottle = 0;
     touchInput.brake = false;
     resetTouchStick();
 
@@ -1337,6 +1340,7 @@ async function enterLobby(room: RaceRoom) {
 
 function resetTouchStick() {
   touchInput.steering = 0;
+  touchInput.stickThrottle = 0;
   touchInput.stickPointerId = null;
 
   if (touchStickKnob) {
@@ -1344,18 +1348,21 @@ function resetTouchStick() {
   }
 }
 
-function updateTouchStick(pointerX: number) {
+function updateTouchStick(pointerX: number, pointerY: number) {
   if (!touchStick || !touchStickKnob) {
     return;
   }
 
   const bounds = touchStick.getBoundingClientRect();
   const centerX = bounds.left + bounds.width / 2;
+  const centerY = bounds.top + bounds.height / 2;
   const maxOffset = bounds.width * 0.34;
   const offsetX = THREE.MathUtils.clamp(pointerX - centerX, -maxOffset, maxOffset);
+  const offsetY = THREE.MathUtils.clamp(pointerY - centerY, -maxOffset, maxOffset);
 
   touchInput.steering = THREE.MathUtils.clamp(-offsetX / maxOffset, -1, 1);
-  touchStickKnob.style.transform = `translate(calc(-50% + ${offsetX}px), -50%)`;
+  touchInput.stickThrottle = THREE.MathUtils.clamp(-offsetY / maxOffset, 0, 1);
+  touchStickKnob.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
 }
 
 function bindTouchButton(button: HTMLButtonElement | null, key: "throttle" | "brake") {
@@ -2288,12 +2295,12 @@ touchStick?.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   touchInput.stickPointerId = event.pointerId;
   touchStick.setPointerCapture(event.pointerId);
-  updateTouchStick(event.clientX);
+  updateTouchStick(event.clientX, event.clientY);
 });
 touchStick?.addEventListener("pointermove", (event) => {
   if (event.pointerId === touchInput.stickPointerId) {
     event.preventDefault();
-    updateTouchStick(event.clientX);
+    updateTouchStick(event.clientX, event.clientY);
   }
 });
 touchStick?.addEventListener("pointerup", (event) => {
