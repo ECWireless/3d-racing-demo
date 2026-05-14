@@ -90,6 +90,21 @@ app.innerHTML = `
     <p class="eyebrow">Leaderboard</p>
     <ol data-leaderboard-list></ol>
   </aside>
+  <aside class="multiplayer-race-panel" data-game-ui data-multiplayer-race-panel hidden>
+    <div class="multiplayer-race-heading">
+      <p class="eyebrow">Room Race</p>
+      <strong data-race-room-code>------</strong>
+    </div>
+    <div class="multiplayer-race-row">
+      <span>You</span>
+      <strong data-local-race-state>Lap 1 / 3</strong>
+    </div>
+    <div class="multiplayer-race-row">
+      <span data-opponent-race-name>Opponent</span>
+      <strong data-opponent-race-state>Waiting</strong>
+    </div>
+    <p class="multiplayer-race-status" data-multiplayer-race-status>Start synced</p>
+  </aside>
   <div class="mobile-controls" data-game-ui hidden>
     <div class="touch-stick" data-touch-stick>
       <div class="touch-stick-knob" data-touch-stick-knob></div>
@@ -152,6 +167,13 @@ const leaderboardBackButton =
 const leaderboardPlayButton =
   document.querySelector<HTMLButtonElement>("[data-leaderboard-play]");
 const gameUiElements = document.querySelectorAll<HTMLElement>("[data-game-ui]");
+const multiplayerRacePanel = document.querySelector<HTMLElement>("[data-multiplayer-race-panel]");
+const raceRoomCodeDisplay = document.querySelector<HTMLElement>("[data-race-room-code]");
+const localRaceStateDisplay = document.querySelector<HTMLElement>("[data-local-race-state]");
+const opponentRaceNameDisplay = document.querySelector<HTMLElement>("[data-opponent-race-name]");
+const opponentRaceStateDisplay = document.querySelector<HTMLElement>("[data-opponent-race-state]");
+const multiplayerRaceStatusDisplay =
+  document.querySelector<HTMLElement>("[data-multiplayer-race-status]");
 const roomCodeDisplay = document.querySelector<HTMLElement>("[data-room-code]");
 const copyRoomCodeButton = document.querySelector<HTMLButtonElement>("[data-copy-room-code]");
 const copyRoomCodeLabel = document.querySelector<HTMLElement>("[data-copy-room-code-label]");
@@ -470,6 +492,14 @@ const remoteKartTarget = {
   pitch: 0,
   updatedAt: 0,
 };
+type RemoteKartSnapshot = {
+  position: THREE.Vector3;
+  heading: number;
+  pitch: number;
+  speed: number;
+  updatedAt: number;
+};
+const remoteKartSnapshots: RemoteKartSnapshot[] = [];
 const remoteYawQuaternion = new THREE.Quaternion();
 const remotePitchQuaternion = new THREE.Quaternion();
 
@@ -617,6 +647,11 @@ const multiplayerSyncState = {
   isPulling: false,
   isPushing: false,
 };
+const multiplayerPushInterval = 0.12;
+const multiplayerPullInterval = 0.22;
+const remoteInterpolationDelayMs = 240;
+const remoteSnapshotMaxAgeMs = 3500;
+const remoteMaxExtrapolationMs = 180;
 let isRampRaised = false;
 
 function isPressed(...codes: string[]) {
@@ -976,11 +1011,17 @@ function setView(view: typeof currentView) {
 function startGame() {
   stopLobbyPolling();
   remoteKartGroup.visible = false;
+  remoteKartSnapshots.length = 0;
   multiplayerSyncState.lastPullAt = 0;
   multiplayerSyncState.lastPushAt = 0;
   resetCar();
   setView("game");
   startCountdown(getRaceStartDelay());
+}
+
+function startSoloGame() {
+  activeRoom = null;
+  startGame();
 }
 
 async function roomRequest(body: Record<string, unknown>) {
@@ -1090,14 +1131,14 @@ function syncMultiplayerRoom(elapsedTime: number) {
     return;
   }
 
-  if (elapsedTime - multiplayerSyncState.lastPushAt > 0.16) {
+  if (elapsedTime - multiplayerSyncState.lastPushAt > multiplayerPushInterval) {
     multiplayerSyncState.lastPushAt = elapsedTime;
     void pushMultiplayerState().catch(() => {
       multiplayerSyncState.isPushing = false;
     });
   }
 
-  if (elapsedTime - multiplayerSyncState.lastPullAt > 0.32) {
+  if (elapsedTime - multiplayerSyncState.lastPullAt > multiplayerPullInterval) {
     multiplayerSyncState.lastPullAt = elapsedTime;
     void pullMultiplayerState().catch(() => {
       multiplayerSyncState.isPulling = false;
@@ -1543,44 +1584,121 @@ function updateCarOrientation() {
   carGroup.quaternion.copy(yawQuaternion).multiply(pitchQuaternion);
 }
 
-function updateRemoteKart(deltaTime: number) {
-  const remotePlayer = activeRoom?.players.find((player) => player.player_id !== playerState.id);
+function getShortestAngleDelta(from: number, to: number) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
 
+function interpolateAngle(from: number, to: number, amount: number) {
+  return from + getShortestAngleDelta(from, to) * amount;
+}
+
+function pushRemoteKartSnapshot(remotePlayer: RoomPlayer) {
   if (
-    !hasActiveMultiplayerRace() ||
-    !remotePlayer ||
     remotePlayer.position_x === null ||
     remotePlayer.position_y === null ||
     remotePlayer.position_z === null ||
     remotePlayer.heading === null ||
     remotePlayer.pitch === null ||
+    remotePlayer.speed === null ||
     !remotePlayer.state_updated_at
   ) {
-    remoteKartGroup.visible = false;
     return;
   }
 
   const updatedAt = Date.parse(remotePlayer.state_updated_at);
-  if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 3000) {
+
+  if (!Number.isFinite(updatedAt)) {
+    return;
+  }
+
+  const lastSnapshot = remoteKartSnapshots[remoteKartSnapshots.length - 1];
+
+  if (lastSnapshot && lastSnapshot.updatedAt >= updatedAt) {
+    return;
+  }
+
+  remoteKartSnapshots.push({
+    position: new THREE.Vector3(
+      Number(remotePlayer.position_x),
+      Number(remotePlayer.position_y),
+      Number(remotePlayer.position_z),
+    ),
+    heading: Number(remotePlayer.heading),
+    pitch: Number(remotePlayer.pitch),
+    speed: Number(remotePlayer.speed),
+    updatedAt,
+  });
+
+  while (remoteKartSnapshots.length > 8) {
+    remoteKartSnapshots.shift();
+  }
+}
+
+function sampleRemoteKartSnapshot() {
+  const now = Date.now();
+  const newestSnapshot = remoteKartSnapshots[remoteKartSnapshots.length - 1];
+
+  if (!newestSnapshot || now - newestSnapshot.updatedAt > remoteSnapshotMaxAgeMs) {
+    return null;
+  }
+
+  const renderTime = now - remoteInterpolationDelayMs;
+
+  while (remoteKartSnapshots.length > 2 && remoteKartSnapshots[1].updatedAt <= renderTime) {
+    remoteKartSnapshots.shift();
+  }
+
+  const previous = remoteKartSnapshots[0];
+  const next = remoteKartSnapshots[1];
+
+  if (!previous) {
+    return null;
+  }
+
+  if (!next) {
+    const extrapolationTime = Math.min(now - previous.updatedAt, remoteMaxExtrapolationMs) / 1000;
+    remoteKartTarget.position.copy(previous.position);
+    remoteKartTarget.position.x += -Math.sin(previous.heading) * previous.speed * extrapolationTime;
+    remoteKartTarget.position.z += -Math.cos(previous.heading) * previous.speed * extrapolationTime;
+    remoteKartTarget.heading = previous.heading;
+    remoteKartTarget.pitch = previous.pitch;
+    remoteKartTarget.updatedAt = previous.updatedAt;
+    return remoteKartTarget;
+  }
+
+  const span = Math.max(next.updatedAt - previous.updatedAt, 1);
+  const amount = THREE.MathUtils.clamp((renderTime - previous.updatedAt) / span, 0, 1);
+
+  remoteKartTarget.position.copy(previous.position).lerp(next.position, amount);
+  remoteKartTarget.heading = interpolateAngle(previous.heading, next.heading, amount);
+  remoteKartTarget.pitch = THREE.MathUtils.lerp(previous.pitch, next.pitch, amount);
+  remoteKartTarget.updatedAt = next.updatedAt;
+  return remoteKartTarget;
+}
+
+function updateRemoteKart(deltaTime: number) {
+  const remotePlayer = activeRoom?.players.find((player) => player.player_id !== playerState.id);
+
+  if (!hasActiveMultiplayerRace() || !remotePlayer) {
+    remoteKartGroup.visible = false;
+    remoteKartSnapshots.length = 0;
+    return;
+  }
+
+  pushRemoteKartSnapshot(remotePlayer);
+  const snapshot = sampleRemoteKartSnapshot();
+
+  if (!snapshot) {
     remoteKartGroup.visible = false;
     return;
   }
 
   remoteKartGroup.visible = true;
-  remoteKartTarget.position.set(
-    Number(remotePlayer.position_x),
-    Number(remotePlayer.position_y),
-    Number(remotePlayer.position_z),
-  );
-  remoteKartTarget.heading = Number(remotePlayer.heading);
-  remoteKartTarget.pitch = Number(remotePlayer.pitch);
-  remoteKartTarget.updatedAt = updatedAt;
+  const follow = 1 - Math.exp(-deltaTime * 14);
+  remoteKartGroup.position.lerp(snapshot.position, follow);
 
-  const follow = 1 - Math.exp(-deltaTime * 9);
-  remoteKartGroup.position.lerp(remoteKartTarget.position, follow);
-
-  remoteYawQuaternion.setFromAxisAngle(worldUp, remoteKartTarget.heading);
-  remotePitchQuaternion.setFromAxisAngle(localRight, remoteKartTarget.pitch);
+  remoteYawQuaternion.setFromAxisAngle(worldUp, snapshot.heading);
+  remotePitchQuaternion.setFromAxisAngle(localRight, snapshot.pitch);
   remoteKartGroup.quaternion.slerp(
     remoteYawQuaternion.multiply(remotePitchQuaternion),
     follow,
@@ -1755,6 +1873,90 @@ function updateCamera(deltaTime: number) {
   camera.lookAt(cameraLookAt);
 }
 
+function getRoomResultFor(playerId: string) {
+  return activeRoom?.results.find((result) => result.player_id === playerId) ?? null;
+}
+
+function getRaceStateLabel(player: RoomPlayer | null, isLocalPlayer: boolean) {
+  if (!activeRoom || !player) {
+    return "Waiting";
+  }
+
+  const result = getRoomResultFor(player.player_id);
+
+  if (result) {
+    return `Finished ${formatRaceTime(result.total_time_ms / 1000)}`;
+  }
+
+  if (isLocalPlayer) {
+    if (raceState.isCountdownActive) {
+      return `Starts in ${Math.ceil(raceState.countdownRemaining)}`;
+    }
+
+    if (raceState.isFinished) {
+      return "Finished";
+    }
+
+    return `Lap ${raceState.currentLap} / ${totalLaps}`;
+  }
+
+  if (!player.state_updated_at) {
+    return activeRoom.status === "racing" ? "Syncing" : "Waiting";
+  }
+
+  const updatedAt = Date.parse(player.state_updated_at);
+
+  if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 3000) {
+    return "Reconnecting";
+  }
+
+  return `Lap ${player.current_lap} / ${totalLaps}`;
+}
+
+function updateMultiplayerRacePanel() {
+  if (!multiplayerRacePanel) {
+    return;
+  }
+
+  const hasRoomRace = hasActiveMultiplayerRace();
+  multiplayerRacePanel.hidden = !hasRoomRace;
+
+  if (!activeRoom || !hasRoomRace) {
+    return;
+  }
+
+  const localPlayer = activeRoom.players.find((player) => player.player_id === playerState.id) ?? null;
+  const opponent = activeRoom.players.find((player) => player.player_id !== playerState.id) ?? null;
+
+  if (raceRoomCodeDisplay) {
+    raceRoomCodeDisplay.textContent = activeRoom.code;
+  }
+
+  if (localRaceStateDisplay) {
+    localRaceStateDisplay.textContent = getRaceStateLabel(localPlayer, true);
+  }
+
+  if (opponentRaceNameDisplay) {
+    opponentRaceNameDisplay.textContent = opponent?.username ?? "Opponent";
+  }
+
+  if (opponentRaceStateDisplay) {
+    opponentRaceStateDisplay.textContent = getRaceStateLabel(opponent, false);
+  }
+
+  if (multiplayerRaceStatusDisplay) {
+    if (activeRoom.status === "finished") {
+      multiplayerRaceStatusDisplay.textContent = "Room race complete";
+    } else if (raceState.isCountdownActive) {
+      multiplayerRaceStatusDisplay.textContent = "Shared countdown";
+    } else if (raceState.isFinished) {
+      multiplayerRaceStatusDisplay.textContent = "Waiting for results";
+    } else {
+      multiplayerRaceStatusDisplay.textContent = "Live room race";
+    }
+  }
+}
+
 function updateHud() {
   if (speedDisplay) {
     speedDisplay.textContent = Math.round(Math.abs(carState.speed) * 5.2).toString();
@@ -1803,6 +2005,8 @@ function updateHud() {
   if (finishResultDisplay) {
     finishResultDisplay.textContent = raceState.resultMessage;
   }
+
+  updateMultiplayerRacePanel();
 }
 
 function formatRaceTime(totalSeconds: number) {
@@ -1888,7 +2092,7 @@ usernameForm?.addEventListener("submit", (event) => {
     saveRaceResult(pendingTime);
   }
 });
-playButton?.addEventListener("click", startGame);
+playButton?.addEventListener("click", startSoloGame);
 createRoomButton?.addEventListener("click", () => {
   clearHomeError();
   void roomRequest({
@@ -1918,8 +2122,8 @@ joinRoomForm?.addEventListener("submit", (event) => {
     .then(enterLobby)
     .catch((error) => showHomeError(error instanceof Error ? error.message : "Could not join room"));
 });
-leaderboardPlayButton?.addEventListener("click", startGame);
-retryButton?.addEventListener("click", startGame);
+leaderboardPlayButton?.addEventListener("click", startSoloGame);
+retryButton?.addEventListener("click", startSoloGame);
 finishLeaderboardButton?.addEventListener("click", () => {
   renderLeaderboard();
   setView("leaderboard");

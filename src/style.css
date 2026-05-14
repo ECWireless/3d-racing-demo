@@ -618,6 +618,76 @@ p {
   font-size: 0.88rem;
 }
 
+.multiplayer-race-panel {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  width: min(280px, calc(100vw - 36px));
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+  background: rgb(17 24 32 / 0.66);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.22);
+  backdrop-filter: blur(14px);
+}
+
+.multiplayer-race-panel[hidden] {
+  display: none;
+}
+
+.multiplayer-race-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.multiplayer-race-heading .eyebrow {
+  margin: 0;
+}
+
+.multiplayer-race-heading strong {
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.multiplayer-race-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 7px;
+  color: #dbe4ed;
+  background: rgb(255 255 255 / 0.06);
+  font-size: 0.88rem;
+}
+
+.multiplayer-race-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiplayer-race-row strong {
+  flex: 0 0 auto;
+  color: #ffca3a;
+  font-size: 0.82rem;
+}
+
+.multiplayer-race-status {
+  color: #90a1b2;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .finish-banner {
   position: fixed;
   top: 24px;
@@ -857,6 +927,12 @@ p {
   .leaderboard {
     display: none;
   }
+
+  .multiplayer-race-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+  }
 }
 
 @media (pointer: coarse), (max-width: 820px) {
@@ -899,5 +975,28 @@ p {
 
   .telemetry dd {
     font-size: 0.74rem;
+  }
+
+  .multiplayer-race-panel {
+    top: 86px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    padding: 10px 12px;
+  }
+
+  .multiplayer-race-panel .eyebrow,
+  .multiplayer-race-status {
+    display: none;
+  }
+
+  .multiplayer-race-row {
+    min-height: 30px;
+    padding: 6px 8px;
+    font-size: 0.78rem;
+  }
+
+  .multiplayer-race-row strong {
+    font-size: 0.72rem;
   }
 }
