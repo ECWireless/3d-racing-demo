@@ -620,7 +620,7 @@ p {
 
 .multiplayer-race-panel {
   position: fixed;
-  top: 18px;
+  top: 68px;
   right: 18px;
   display: grid;
   width: min(280px, calc(100vw - 36px));
@@ -686,6 +686,80 @@ p {
   color: #90a1b2;
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.pause-toggle {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 5;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 7px;
+  color: #f8fafc;
+  background: rgb(17 24 32 / 0.64);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 0.22);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 950;
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+}
+
+.pause-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  align-items: start;
+  justify-items: end;
+  padding: 66px 18px 18px;
+  background: rgb(17 24 32 / 0.16);
+  pointer-events: auto;
+}
+
+.pause-menu[hidden] {
+  display: none;
+}
+
+.pause-panel {
+  display: grid;
+  width: min(280px, calc(100vw - 36px));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 8px;
+  background: rgb(17 24 32 / 0.78);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 0.34);
+  backdrop-filter: blur(16px);
+}
+
+.pause-panel strong {
+  color: #ffffff;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.pause-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.pause-actions button {
+  min-height: 40px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  color: #f8fafc;
+  background: rgb(255 255 255 / 0.08);
+  font: inherit;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.pause-actions button:first-child {
+  color: #111820;
+  background: #ffca3a;
 }
 
 .finish-banner {

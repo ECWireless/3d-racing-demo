@@ -105,6 +105,9 @@ app.innerHTML = `
     </div>
     <p class="multiplayer-race-status" data-multiplayer-race-status>Start synced</p>
   </aside>
+  <button class="pause-toggle" type="button" data-game-ui data-pause-toggle hidden aria-label="Pause">
+    Pause
+  </button>
   <div class="mobile-controls" data-game-ui hidden>
     <div class="touch-stick" data-touch-stick>
       <div class="touch-stick-knob" data-touch-stick-knob></div>
@@ -140,6 +143,17 @@ app.innerHTML = `
     <strong data-announcement-title>3</strong>
     <span data-announcement-subtitle>Get ready</span>
   </div>
+  <div class="pause-menu" data-pause-menu hidden>
+    <section class="pause-panel">
+      <p class="eyebrow">Paused</p>
+      <strong>Race menu</strong>
+      <div class="pause-actions">
+        <button type="button" data-resume-button>Resume</button>
+        <button type="button" data-pause-retry-button>Retry</button>
+        <button type="button" data-main-menu-button>Main Screen</button>
+      </div>
+    </section>
+  </div>
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>(".game-canvas");
@@ -174,6 +188,11 @@ const opponentRaceNameDisplay = document.querySelector<HTMLElement>("[data-oppon
 const opponentRaceStateDisplay = document.querySelector<HTMLElement>("[data-opponent-race-state]");
 const multiplayerRaceStatusDisplay =
   document.querySelector<HTMLElement>("[data-multiplayer-race-status]");
+const pauseToggle = document.querySelector<HTMLButtonElement>("[data-pause-toggle]");
+const pauseMenu = document.querySelector<HTMLElement>("[data-pause-menu]");
+const resumeButton = document.querySelector<HTMLButtonElement>("[data-resume-button]");
+const pauseRetryButton = document.querySelector<HTMLButtonElement>("[data-pause-retry-button]");
+const mainMenuButton = document.querySelector<HTMLButtonElement>("[data-main-menu-button]");
 const roomCodeDisplay = document.querySelector<HTMLElement>("[data-room-code]");
 const copyRoomCodeButton = document.querySelector<HTMLButtonElement>("[data-copy-room-code]");
 const copyRoomCodeLabel = document.querySelector<HTMLElement>("[data-copy-room-code-label]");
@@ -507,6 +526,7 @@ const clock = new THREE.Clock();
 const keys = new Set<string>();
 const touchInput = {
   throttle: false,
+  stickThrottle: 0,
   brake: false,
   steering: 0,
   stickPointerId: null as number | null,
@@ -641,17 +661,18 @@ let leaderboardError: string | null = null;
 let currentView: "home" | "game" | "leaderboard" | "lobby" = "home";
 let activeRoom: RaceRoom | null = null;
 let lobbyPollTimer: number | null = null;
+let isPauseMenuOpen = false;
 const multiplayerSyncState = {
   lastPullAt: 0,
   lastPushAt: 0,
   isPulling: false,
   isPushing: false,
 };
-const multiplayerPushInterval = 0.12;
-const multiplayerPullInterval = 0.22;
-const remoteInterpolationDelayMs = 240;
+const multiplayerPushInterval = 0.1;
+const multiplayerPullInterval = 0.18;
+const remoteInterpolationDelayMs = 150;
 const remoteSnapshotMaxAgeMs = 3500;
-const remoteMaxExtrapolationMs = 180;
+const remoteMaxExtrapolationMs = 220;
 let isRampRaised = false;
 
 function isPressed(...codes: string[]) {
@@ -659,7 +680,7 @@ function isPressed(...codes: string[]) {
 }
 
 function getThrottleInput() {
-  return touchInput.throttle || isPressed("KeyW", "ArrowUp");
+  return touchInput.throttle || touchInput.stickThrottle > 0.2 || isPressed("KeyW", "ArrowUp");
 }
 
 function getBrakeInput() {
@@ -968,6 +989,47 @@ function clearHomeError() {
   homeError.textContent = "";
 }
 
+function closePauseMenu() {
+  isPauseMenuOpen = false;
+
+  if (pauseMenu) {
+    pauseMenu.hidden = true;
+  }
+}
+
+function openPauseMenu() {
+  if (currentView !== "game") {
+    return;
+  }
+
+  isPauseMenuOpen = true;
+  keys.clear();
+  touchInput.throttle = false;
+  touchInput.stickThrottle = 0;
+  touchInput.brake = false;
+  resetTouchStick();
+
+  if (pauseMenu) {
+    pauseMenu.hidden = false;
+  }
+}
+
+function togglePauseMenu() {
+  if (isPauseMenuOpen) {
+    closePauseMenu();
+  } else {
+    openPauseMenu();
+  }
+}
+
+function returnToMainScreen() {
+  activeRoom = null;
+  remoteKartGroup.visible = false;
+  remoteKartSnapshots.length = 0;
+  closePauseMenu();
+  setView("home");
+}
+
 function setView(view: typeof currentView) {
   currentView = view;
 
@@ -988,8 +1050,10 @@ function setView(view: typeof currentView) {
   }
 
   if (view !== "game") {
+    closePauseMenu();
     keys.clear();
     touchInput.throttle = false;
+    touchInput.stickThrottle = 0;
     touchInput.brake = false;
     resetTouchStick();
 
@@ -1010,6 +1074,7 @@ function setView(view: typeof currentView) {
 
 function startGame() {
   stopLobbyPolling();
+  closePauseMenu();
   remoteKartGroup.visible = false;
   remoteKartSnapshots.length = 0;
   multiplayerSyncState.lastPullAt = 0;
@@ -1082,6 +1147,21 @@ function getRaceStartDelay() {
   }
 
   return countdownDuration;
+}
+
+function getStartLaneOffset() {
+  if (!activeRoom) {
+    return 0;
+  }
+
+  const localPlayer = activeRoom.players.find((player) => player.player_id === playerState.id);
+
+  if (!localPlayer) {
+    return 0;
+  }
+
+  const laneSpacing = Math.min(roadWidth * 0.28, 4.2);
+  return localPlayer.slot === 1 ? -laneSpacing / 2 : laneSpacing / 2;
 }
 
 async function pushMultiplayerState() {
@@ -1260,6 +1340,7 @@ async function enterLobby(room: RaceRoom) {
 
 function resetTouchStick() {
   touchInput.steering = 0;
+  touchInput.stickThrottle = 0;
   touchInput.stickPointerId = null;
 
   if (touchStickKnob) {
@@ -1267,18 +1348,21 @@ function resetTouchStick() {
   }
 }
 
-function updateTouchStick(pointerX: number) {
+function updateTouchStick(pointerX: number, pointerY: number) {
   if (!touchStick || !touchStickKnob) {
     return;
   }
 
   const bounds = touchStick.getBoundingClientRect();
   const centerX = bounds.left + bounds.width / 2;
+  const centerY = bounds.top + bounds.height / 2;
   const maxOffset = bounds.width * 0.34;
   const offsetX = THREE.MathUtils.clamp(pointerX - centerX, -maxOffset, maxOffset);
+  const offsetY = THREE.MathUtils.clamp(pointerY - centerY, -maxOffset, maxOffset);
 
   touchInput.steering = THREE.MathUtils.clamp(-offsetX / maxOffset, -1, 1);
-  touchStickKnob.style.transform = `translate(calc(-50% + ${offsetX}px), -50%)`;
+  touchInput.stickThrottle = THREE.MathUtils.clamp(-offsetY / maxOffset, 0, 1);
+  touchStickKnob.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px))`;
 }
 
 function bindTouchButton(button: HTMLButtonElement | null, key: "throttle" | "brake") {
@@ -1545,7 +1629,7 @@ function resetCar() {
   carState.verticalVelocity = 0;
   carState.pitch = 0;
   carState.isAirborne = false;
-  carGroup.position.set(0, 0.48, startLineZ);
+  carGroup.position.set(0, 0.48, startLineZ + getStartLaneOffset());
   updateCarOrientation();
 
   raceState.currentLap = 1;
@@ -2032,7 +2116,7 @@ function animate() {
   const elapsedTime = clock.getElapsedTime();
 
   updateRamp(elapsedTime);
-  if (currentView === "game") {
+  if (currentView === "game" && !isPauseMenuOpen) {
     updateCar(deltaTime);
     updateRace(deltaTime);
     syncMultiplayerRoom(elapsedTime);
@@ -2041,7 +2125,9 @@ function animate() {
   updateRemoteKart(deltaTime);
   updateCamera(deltaTime);
   updateHud();
-  updateAnnouncement(deltaTime);
+  if (!isPauseMenuOpen) {
+    updateAnnouncement(deltaTime);
+  }
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
@@ -2052,7 +2138,18 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (event.code === "Escape") {
+    event.preventDefault();
+    togglePauseMenu();
+    return;
+  }
+
   if (isTypingIntoForm(event)) {
+    return;
+  }
+
+  if (isPauseMenuOpen) {
+    event.preventDefault();
     return;
   }
 
@@ -2064,6 +2161,11 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => {
   if (currentView !== "game") {
+    return;
+  }
+
+  if (isPauseMenuOpen) {
+    keys.delete(event.code);
     return;
   }
 
@@ -2124,6 +2226,10 @@ joinRoomForm?.addEventListener("submit", (event) => {
 });
 leaderboardPlayButton?.addEventListener("click", startSoloGame);
 retryButton?.addEventListener("click", startSoloGame);
+pauseToggle?.addEventListener("click", togglePauseMenu);
+resumeButton?.addEventListener("click", closePauseMenu);
+pauseRetryButton?.addEventListener("click", startSoloGame);
+mainMenuButton?.addEventListener("click", returnToMainScreen);
 finishLeaderboardButton?.addEventListener("click", () => {
   renderLeaderboard();
   setView("leaderboard");
@@ -2189,12 +2295,12 @@ touchStick?.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   touchInput.stickPointerId = event.pointerId;
   touchStick.setPointerCapture(event.pointerId);
-  updateTouchStick(event.clientX);
+  updateTouchStick(event.clientX, event.clientY);
 });
 touchStick?.addEventListener("pointermove", (event) => {
   if (event.pointerId === touchInput.stickPointerId) {
     event.preventDefault();
-    updateTouchStick(event.clientX);
+    updateTouchStick(event.clientX, event.clientY);
   }
 });
 touchStick?.addEventListener("pointerup", (event) => {
